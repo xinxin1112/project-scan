@@ -23,6 +23,14 @@ Claude Code 插件 — 扫描项目代码库，自动生成 AI 知识库（CLAUD
 /install-plugin xinxin1112/project-scan
 ```
 
+## 更新
+
+```
+/install-plugin xinxin1112/project-scan --force
+```
+
+使用 `--force` 参数会重新拉取最新版本覆盖本地插件文件。
+
 ## 使用
 
 在 Claude Code 中输入：
