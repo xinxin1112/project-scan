@@ -34,12 +34,6 @@ Scan any project codebase and generate a dual-format knowledge base: AI context 
 当前目录无法识别为项目时，进入交互式源收集。逐步询问：
 
 ```
-请为本次扫描命名（用作知识库目录名，如：pur-reconcile）：
-```
-
-用户回复后，STOP 等待。收到回答后继续：
-
-```
 请提供项目源（支持 git 地址或本地路径，可多个）：
 
 1. 后端项目地址/路径：
@@ -50,64 +44,103 @@ Scan any project codebase and generate a dual-format knowledge base: AI context 
 
 注意：主分支名称**没有默认值**，必须让用户明确填写。不同项目主分支命名差异大（main、master、prd、release_prd、develop 等），不可假设。
 
-用户回复后，STOP 等待。收到回答后继续模块选择和扫描。
-
-主分支名称用于：
-- clone 时拉取该分支代码
-- 增量更新时作为 git diff 的基准分支
+用户回复后，STOP 等待。
 
 #### 输入格式识别
 
 | 输入格式 | 处理方式 |
 |----------|----------|
-| `git@...` 或 `https://...*.git` | git clone 到 `{当前目录}/{项目名}/.sources/{repo-name}/` |
+| `git@...` 或 `https://...*.git` | git clone 到知识库根目录下 |
 | 绝对/相对路径 | 直接使用该路径 |
 
 #### Clone 行为
 
-- clone 到 `{当前目录}/{项目名}/.sources/{repo-name}/`
-- 使用 `git clone --depth 1 --branch {分支名} {地址}` 浅克隆指定分支
-- 如果用户未指定分支，使用仓库默认分支（不传 --branch 参数）
+- 知识库根目录名 = git 仓库名（如 `pur-center`、`srm-web`），自动从 git 地址解析
+- clone 到 `{当前目录}/{知识库名}/code/{repo-name}/`
+- 使用 `git clone --depth 1 --branch {主分支名} {地址}` 浅克隆指定分支
 - clone 完成后，对每个源执行 Auto-detect 判断类型（后端/前端）
 - 如果 clone 失败，提示用户检查地址、分支名和权限，STOP 等待
 
-#### PRD 目录
+主分支名称用于：
+- clone 时拉取该分支代码
+- 增量更新时作为 git diff 的基准分支
 
-clone 完成后，**必须执行** `mkdir -p {当前目录}/{项目名}/prd/` 创建 PRD 目录，然后提示：
+#### 多模块检测
+
+clone 完成后，检测项目是否为多模块（Gradle multi-module / Maven multi-module / Turborepo 等）：
+- 是多模块 → 列出所有模块，询问用户要扫描哪些模块
+- 用户选择模块后，**按模块名建立知识库子目录**，每个模块独立生成知识库
 
 ```
-源代码已就绪。如需包含 PRD 文档，请将文件放入：
-  {当前目录}/{项目名}/prd/
+检测到多模块项目，包含以下模块：
+- pur-order
+- pur-reconcile
+- pur-supplier
+- ...
+
+请选择要扫描的模块（逗号分隔，或输入 all）：
+```
+
+STOP 等待用户回复。
+
+#### PRD 目录
+
+模块确定后，在每个模块的知识库目录下 **必须执行** `mkdir -p` 创建 `prd/` 目录，然后提示：
+
+```
+源代码已就绪。请将 PRD 文档放入对应模块的 prd/ 目录：
+  {当前目录}/{知识库名}/{模块名}/prd/
 
 放好后回复"继续"开始扫描，或直接回复"继续"跳过 PRD。
 ```
 
 STOP 等待用户回复。用户回复"继续"后：
-- 检查 `prd/` 目录是否有文件
+- 检查各 `prd/` 目录是否有文件
 - 有文件 → 纳入 Phase 16（PRD 提取）
 - 无文件 → 跳过 Phase 16
 
 #### 输出目录结构
 
-每个项目独立一个目录，支持在同一位置生成多个项目的知识库：
+知识库根目录以 git 仓库名命名，源码放在 `code/` 下，知识库按模块分目录：
 
 ```
 {当前目录}/
-├── {项目名-1}/                ← 第一个项目的知识库
-│   ├── .sources/              ← git clone 的源码（可删除）
+├── {知识库名}/                        ← 以后端仓库名命名（如 pur-center）
+│   ├── code/                          ← 源码目录
+│   │   ├── pur-center/                ← 后端代码（git clone）
+│   │   └── srm-web/                   ← 前端代码（git clone）
+│   ├── {模块名-1}/                    ← 模块级知识库（如 pur-reconcile）
+│   │   ├── prd/                       ← 该模块的 PRD 文档
+│   │   ├── CLAUDE.md
+│   │   ├── project-knowledge.md
+│   │   ├── ai/
+│   │   │   ├── backend/
+│   │   │   ├── frontend/
+│   │   │   └── cross-reference.md
+│   │   ├── test-data/
+│   │   └── .scan-state.json
+│   ├── {模块名-2}/                    ← 另一个模块的知识库
+│   │   └── ...
+│   └── .scan-state.json               ← 项目级扫描状态
+```
+
+如果不是多模块项目（单模块），则不建子目录，知识库直接生成在知识库根目录下：
+
+```
+{当前目录}/
+├── {知识库名}/
+│   ├── code/
 │   │   ├── backend-repo/
 │   │   └── frontend-repo/
-│   ├── prd/                   ← 用户放入的 PRD 文档
-│   ├── CLAUDE.md              ← AI 入口索引
-│   ├── project-knowledge.md   ← 聚合文档
+│   ├── prd/
+│   ├── CLAUDE.md
+│   ├── project-knowledge.md
 │   ├── ai/
 │   │   ├── backend/
 │   │   ├── frontend/
 │   │   └── cross-reference.md
 │   ├── test-data/
 │   └── .scan-state.json
-├── {项目名-2}/                ← 第二个项目的知识库
-│   └── ...
 ```
 
 ### 单项目与多源模式共存

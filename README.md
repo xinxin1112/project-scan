@@ -57,37 +57,35 @@ project-root/
     └── test-data/                     ← 采样的业务数据
 ```
 
-### 多源模式
+### 多源模式（多模块项目）
 
-每个项目独立一个目录，支持在同一位置管理多个项目的知识库：
+知识库以后端仓库名命名，源码放在 `code/` 下，按模块分目录生成知识库：
 
 ```
 workspace/
-├── pur-reconcile/                     ← 项目 A 的知识库
-│   ├── .sources/                      ← clone 的源码（可删除）
-│   │   ├── pur-center/
-│   │   └── srm-web/
-│   ├── prd/                           ← PRD 文档
-│   ├── CLAUDE.md
-│   ├── project-knowledge.md
-│   ├── ai/
-│   │   ├── backend/
-│   │   ├── frontend/
-│   │   └── cross-reference.md
-│   ├── test-data/
-│   └── .scan-state.json
-├── pur-order/                         ← 项目 B 的知识库
-│   └── ...
+├── pur-center/                        ← 知识库根目录（后端仓库名）
+│   ├── code/                          ← 源码目录
+│   │   ├── pur-center/                ← 后端代码
+│   │   └── srm-web/                   ← 前端代码
+│   ├── pur-reconcile/                 ← 模块 A 的知识库
+│   │   ├── prd/                       ← 该模块的 PRD
+│   │   ├── CLAUDE.md
+│   │   ├── project-knowledge.md
+│   │   ├── ai/
+│   │   │   ├── backend/
+│   │   │   ├── frontend/
+│   │   │   └── cross-reference.md
+│   │   ├── test-data/
+│   │   └── .scan-state.json
+│   ├── pur-order/                     ← 模块 B 的知识库
+│   │   └── ...
+│   └── .scan-state.json               ← 项目级状态
 ```
 
 ## 典型使用流程
 
 ```
 > /project-scan
-
-请为本次扫描命名（用作知识库目录名）：
-
-> pur-reconcile
 
 请提供项目源：
 1. 后端项目地址/路径：
@@ -106,9 +104,20 @@ workspace/
 
 > release_prd
 
-正在 clone 源码（develop 分支）...
-源代码已就绪。如需包含 PRD 文档，请将文件放入：
-  ./pur-reconcile/prd/
+正在 clone 源码（release_prd 分支）...
+
+检测到多模块项目，包含以下模块：
+- pur-order
+- pur-reconcile
+- pur-supplier
+- ...
+
+请选择要扫描的模块（逗号分隔，或输入 all）：
+
+> pur-reconcile
+
+源代码已就绪。请将 PRD 文档放入：
+  ./pur-center/pur-reconcile/prd/
 放好后回复"继续"开始扫描。
 
 > 继续
