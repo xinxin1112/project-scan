@@ -26,8 +26,23 @@ Scan any project codebase and generate a dual-format knowledge base: AI context 
 ├── 是 → 多源模式（提示：已有知识库，是否 update / add-source / 重新扫描）
 ├── 否 → 当前目录有构建文件（pom.xml/build.gradle/package.json 等）？
 │         ├── 是 → 单项目扫描（现有 Phase 1-9 逻辑）
-│         └── 否 → 进入多源扫描 Phase 0（交互式收集源）
+│         └── 否 → 询问项目路径（见下方 Path Prompt）
 ```
+
+### Path Prompt（路径询问）
+
+当前目录无法识别为项目时，输出：
+
+```
+请输入要扫描的项目路径（绝对路径或相对路径）：
+```
+
+用户提供路径后，cd 到该路径重新执行 Auto-detect：
+- 路径下有 .scan-state.json → 多源模式
+- 路径下有构建文件 → 单项目扫描
+- 路径下仍无构建文件 → 进入多源扫描 Phase 0（交互式收集源）
+
+知识库输出位置默认为用户提供的项目路径下。
 
 ### 单项目与多源模式共存
 
