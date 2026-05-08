@@ -1,0 +1,9 @@
+{
+  "name": "project-scan",
+  "version": "1.2.0",
+  "description": "Claude Code plugin - scan project codebase to generate AI knowledge base",
+  "private": true,
+  "dependencies": {
+    "mysql2": "^3.11.0"
+  }
+}

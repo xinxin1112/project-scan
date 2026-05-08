@@ -421,59 +421,39 @@ Two-pass approach: first scan code artifacts, then connect to test database for 
 
 #### 6B: Database Direct Connection (Java projects with MySQL/PostgreSQL)
 
-**Prerequisite check**: 按优先级检测可用的数据库连接方式：
+**Prerequisite check**: 自动检测并准备数据库连接环境。
+
+**Step 0 — 确保 mysql2 已安装：**
 
 ```bash
-# 优先级 1：mysql/psql CLI
-which mysql || which psql
-
-# 优先级 2：Docker
-which docker
-
-# 优先级 3：Node.js (npx)
-which npx
+# 检查插件目录下是否已安装 mysql2
+if [ ! -d "${CLAUDE_PLUGIN_ROOT}/node_modules/mysql2" ]; then
+  cd ${CLAUDE_PLUGIN_ROOT} && npm install --silent
+fi
 ```
 
-**连接方式自动选择：**
+如果 `npm install` 失败（无网络等），回退到代码推断方式。
 
-| 优先级 | 检测条件 | 连接方式 |
-|--------|----------|----------|
-| 1 | `mysql`/`psql` CLI 可用 | 直接执行 `mysql -h ... -e "SQL"` |
-| 2 | `docker` 可用 | `docker run --rm mysql:8 mysql -h host -P port -u user -p'pass' db -e "SQL"` |
-| 3 | `npx` 可用 | 生成临时 JS 脚本，通过 `npx mysql2` 执行查询（见下方模板） |
-| 无 | 以上都不可用 | 从代码推断（Entity 类、MyBatis XML、migration 文件） |
+**数据库查询统一使用插件自带脚本：**
 
-**npx 连接模板（优先级 3）：**
-
-当仅有 Node.js 环境时，生成临时脚本执行查询：
 ```bash
-npx -y mysql2 -e "
-const mysql = require('mysql2/promise');
-(async () => {
-  const conn = await mysql.createConnection({
-    host: '{host}', port: {port}, user: '{user}', password: '{password}', database: '{database}'
-  });
-  const [rows] = await conn.execute('{SQL}');
-  console.log(JSON.stringify(rows, null, 2));
-  await conn.end();
-})();
-"
+node ${CLAUDE_PLUGIN_ROOT}/scripts/db-query.js <host> <port> <user> <password> <database> "<SQL>"
 ```
 
-注意：如果 `npx mysql2` 不可用，改用以下方式：
-```bash
-mkdir -p /tmp/db-scan && cd /tmp/db-scan && npm init -y > /dev/null 2>&1 && npm install mysql2 --silent && node -e "上述脚本内容" && rm -rf /tmp/db-scan
+该脚本基于 mysql2 包，无需系统安装 mysql CLI、Docker 等工具。
+
+**如果连接失败（网络不通、密码错误等）：**
+
+提示用户选择：
+```
+数据库连接失败：{错误信息}
+
+1. 重新输入连接信息
+2. 从代码推断（解析 Entity 类、MyBatis XML、migration 文件）
+3. 跳过数据库扫描
 ```
 
-**Docker 连接注意事项：**
-- 使用 `--rm` 避免残留容器
-- 使用 `--network host` 确保能访问宿主机网络的数据库
-- MySQL: `docker run --rm --network host mysql:8 mysql -h {host} -P {port} -u {user} -p'{password}' {database} -e "{SQL}"`
-- PostgreSQL: `docker run --rm --network host postgres:16 psql "postgresql://{user}:{password}@{host}:{port}/{database}" -c "{SQL}"`
-
-**如果所有方式都不可用：**
-
-从代码推断（Entity 类、MyBatis XML、migration 文件），在知识库中标注"（基于代码推断，未直连数据库验证）"。
+STOP 等待用户回复。
 
 **Step 1 — Parse datasource config:**
 
