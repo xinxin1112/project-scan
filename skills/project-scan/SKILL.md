@@ -150,7 +150,21 @@ STOP 等待用户回复。用户回复"继续"后：
 │   │   ├── project-knowledge.md
 │   │   ├── ai/
 │   │   │   ├── backend/
+│   │   │   │   ├── architecture.md
+│   │   │   │   ├── api.md
+│   │   │   │   ├── database-schema.md
+│   │   │   │   └── business-flow.md
 │   │   │   ├── frontend/
+│   │   │   │   ├── routes.md
+│   │   │   │   ├── api-calls.md
+│   │   │   │   ├── state-management.md
+│   │   │   │   └── components.md
+│   │   │   ├── business/              ← 业务知识（业务+开发共用）
+│   │   │   │   ├── glossary.md        ← 业务术语表（中英文对照）
+│   │   │   │   ├── domain-rules.md    ← 业务规则（从代码逻辑提取）
+│   │   │   │   ├── workflows.md       ← 业务流程（Mermaid 流程图）
+│   │   │   │   ├── data-dictionary.md ← 数据字典（业务语言描述字段含义）
+│   │   │   │   └── faq.md             ← 常见问题（从 PRD + 代码推断）
 │   │   │   └── cross-reference.md
 │   │   ├── test-data/
 │   │   └── .scan-state.json
@@ -1112,6 +1126,83 @@ Generate Mermaid flowcharts for key business processes identified from cross-ref
 - Permission/role-based access flows
 
 Output as Mermaid `flowchart TD` diagrams in `project-knowledge.md`.
+
+### Phase 17B: Business Knowledge Generation (业务知识提取)
+
+基于前面所有 Phase 的扫描结果，生成面向业务人员的知识文件。输出到 `ai/business/` 目录。
+
+#### glossary.md（业务术语表）
+
+从以下来源提取术语：
+- 数据库表名、字段名及注释（Phase 6）
+- Entity 类的中文注释和 JavaDoc
+- PRD 文档中的专有名词（Phase 16）
+- API 接口路径中的业务词汇（Phase 5）
+- 前端页面标题和菜单名称（Phase 11）
+
+格式：
+```markdown
+| 术语 | 英文/代码标识 | 含义 | 所属模块 |
+|------|--------------|------|----------|
+| 对账单 | reconcile_bill | 供应商与采购方核对账目的单据 | pur-reconcile |
+```
+
+#### domain-rules.md（业务规则）
+
+从代码逻辑中提取业务规则：
+- Service 层的 if/else 判断逻辑和校验规则
+- 枚举类中的状态定义和状态流转
+- 注解中的约束（@NotNull, @Size, 自定义校验）
+- 异常抛出条件（什么情况下操作会失败）
+
+格式：
+```markdown
+## {业务场景}
+
+### 规则列表
+1. {规则描述，用业务语言}
+   - 触发条件：...
+   - 结果：...
+   - 代码位置：{类名#方法名}
+```
+
+#### workflows.md（业务流程）
+
+基于 Phase 7 的业务流程分析，用业务语言重新描述：
+- 每个流程用 Mermaid flowchart 可视化
+- 节点用业务术语命名（不用代码方法名）
+- 标注每步的操作人角色
+- 标注异常分支和回退路径
+
+#### data-dictionary.md（数据字典）
+
+基于 Phase 6 的数据库 schema，用业务语言描述：
+```markdown
+## {表中文名}（{table_name}）
+
+{表的业务用途描述}
+
+| 字段 | 类型 | 业务含义 | 示例值 | 备注 |
+|------|------|----------|--------|------|
+| bill_no | varchar(32) | 对账单编号 | RC202401001 | 自动生成，规则：RC+年月+序号 |
+```
+
+#### faq.md（常见问题）
+
+从 PRD、代码逻辑、业务流程中推断常见问题：
+- 某个操作的前置条件是什么？
+- 某个状态为什么不能流转？
+- 某个字段是怎么计算的？
+- 某个流程的参与角色有哪些？
+
+格式：
+```markdown
+## Q: {问题}
+
+**A:** {回答，引用具体规则或流程}
+
+相关：[规则名](domain-rules.md#xxx) | [流程名](workflows.md#xxx)
+```
 
 ### Phase 18: Output Generation (Multi-Source Only)
 
