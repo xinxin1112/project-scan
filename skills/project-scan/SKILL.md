@@ -1052,18 +1052,42 @@ Output merged into `ai/frontend-routes.md` Config section header.
 
 ### Phase 16: PRD/Document Extraction (Multi-Source Only)
 
-Use Read tool to read PRD files (PDF/Word/Markdown/Image).
+**文件格式处理：**
+
+| 格式 | 处理方式 |
+|------|----------|
+| .md | 直接 Read |
+| .pdf | 直接 Read（使用 pages 参数分页读取，每次最多 20 页） |
+| .docx | 先转 PDF：`textutil -convert pdf {file.docx}`，再 Read 生成的 PDF |
+| .png / .jpg | 直接 Read（Claude 会识别图片内容） |
+
+**重要：不要用 textutil -convert txt**，txt 转换会丢失所有图片内容。必须转 PDF 保留图片。
+
+**转换步骤（.docx）：**
+```bash
+# 转换为 PDF（macOS 自带，保留图片和格式）
+textutil -convert pdf "{prd-dir}/文件名.docx"
+# 生成的 PDF 在同目录：{prd-dir}/文件名.pdf
+```
+
+转换后用 Read 工具读取 PDF，包括其中的图片（流程图、截图、表格等）。
+
+**大文件处理：**
+- PDF 超过 20 页时，分批读取：`pages: "1-20"`、`pages: "21-40"` ...
+- 每批读取后提取关键信息，不需要记住全部原文
 
 **Freshness tracking** (PRD not in git, use mtime + file size):
 ```bash
 stat -f "%m %z" {prd-path}  # macOS: mtime + size
 ```
 
-Extract content and distribute to:
-- Business terms → `ai/glossary.md`
-- Business flows/state machines → `ai/business-flows.md`
-- Page function descriptions → merge into `ai/frontend-routes.md` "业务说明" column
-- Architecture decisions → `ai/backend-architecture.md` (if relevant)
+**Extract content and distribute to:**
+- Business terms → `ai/business/glossary.md`
+- Business flows/state machines → `ai/business/workflows.md`
+- Business rules → `ai/business/domain-rules.md`
+- Page function descriptions → merge into `ai/frontend/routes.md` "业务说明" column
+- Architecture decisions → `ai/backend/architecture.md` (if relevant)
+- 图片中的流程图/架构图 → 用 Mermaid 重新绘制到对应文件中
 
 ### Phase 17: Cross-Reference (Multi-Source Only)
 
