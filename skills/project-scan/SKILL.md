@@ -31,16 +31,82 @@ fi
 | `check` | Freshness check | 检查各模块是否过期，只输出报告，不执行更新 |
 | `add-source` | Add source | 读取现有 .scan-state.json，追加新源或修改网关规则 |
 | `reindex` | Vector reindex | 全量重建向量索引（切换 embedding 模型后使用） |
+| `vector` | Vector index | 对已有知识库生成向量索引（首次启用向量检索时使用） |
 
 ### Auto-detect Logic (无参数时)
 
 ```
 当前目录有 .scan-state.json？
-├── 是 → 多源模式（提示：已有知识库，是否 update / add-source / 重新扫描）
+├── 是 → 执行新鲜度检查（见下方），根据结果给出选项
 ├── 否 → 当前目录有构建文件（pom.xml/build.gradle/package.json 等）？
 │         ├── 是 → 单项目扫描（现有 Phase 1-9 逻辑）
 │         └── 否 → 询问项目路径（见下方 Path Prompt）
 ```
+
+#### 已有知识库时的新鲜度检查
+
+检测到 `.scan-state.json` 后，先自动检查所有源的新鲜度：
+
+```bash
+# 对每个 backend 源
+cd {source-path}
+git fetch origin {生产分支} --quiet 2>/dev/null || true
+git log -1 --format=%H origin/{生产分支} -- {module-path}
+# 对比 .scan-state.json 中记录的 commit
+
+# 对每个 frontend 源
+cd {source-path}
+git fetch origin {生产分支} --quiet 2>/dev/null || true
+git log -1 --format=%H origin/{生产分支} -- {scannedPaths...}
+
+# 对每个 document 源
+stat -f "%m %z" {document-path}
+```
+
+**如果全部最新：**
+```
+检测到已有知识库（上次扫描：{lastScan}）
+
+正在检查新鲜度...
+✓ backend/{module-1} — 最新
+✓ backend/{module-2} — 最新
+✓ frontend/{project} — 最新
+
+知识库已是最新，无需更新。是否仍要：
+1. 重新全量扫描
+2. 追加新数据源
+3. 生成向量索引
+4. 退出
+```
+
+STOP 等待用户回复。
+
+**如果有过期模块：**
+```
+检测到已有知识库（上次扫描：{lastScan}）
+
+正在检查新鲜度...
+✓ backend/{module-1} — 最新
+✗ backend/{module-2} — 过期（{N} commits behind）
+✓ frontend/{project} — 最新
+✗ document/{filename} — 过期（文件已修改）
+
+建议操作：
+1. 更新过期模块（增量更新）
+2. 重新全量扫描
+3. 追加新数据源
+4. 生成向量索引
+5. 退出
+```
+
+STOP 等待用户回复。
+
+用户选择后：
+- 选 1（更新过期模块）→ 执行增量更新逻辑（同 `/project-scan update`，但只更新过期的）
+- 选 2（重新全量扫描）→ 重新进入 Phase 0 源收集流程
+- 选 3（追加新数据源）→ 进入 add-source 流程
+- 选 4（生成向量索引）→ 直接进入 Phase 19
+- 选 5（退出）→ 结束
 
 ### Path Prompt（源收集）
 
@@ -1515,6 +1581,13 @@ Best-effort + report strategy:
 No automatic retry or rollback.
 
 ### Phase 19: Vector Indexing (Optional)
+
+**触发条件：**
+- 所有扫描 Phase 完成后自动提示
+- 用户执行 `/project-scan vector` 直接进入
+- 用户在新鲜度检查菜单中选择"生成向量索引"
+
+当参数为 `vector` 时，跳过所有扫描 Phase，直接执行以下步骤。前提是当前目录有 `.scan-state.json` 或知识库目录存在。如果找不到知识库，提示："未找到知识库，请先运行 /project-scan 生成知识库。"
 
 所有扫描 Phase 完成后，提示用户是否生成向量索引：
 
