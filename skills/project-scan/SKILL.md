@@ -44,20 +44,33 @@ fi
 
 ### Path Prompt（源收集）
 
-当前目录无法识别为项目时，进入交互式源收集。逐步询问：
+当前目录无法识别为项目时，进入交互式源收集。**逐个询问，每个问题单独等待回复：**
 
 ```
-请提供项目源（支持 git 地址或本地路径，可多个）：
-
-1. 后端项目地址/路径：
-2. 后端主分支名称（如 main/master/develop/release_prd）：
-3. 前端项目地址/路径（没有可跳过）：
-4. 前端主分支名称（如 main/master/develop/release_prd）：
+请提供后端项目 git 地址或本地路径：
 ```
 
-注意：主分支名称**没有默认值**，必须让用户明确填写。不同项目主分支命名差异大（main、master、prd、release_prd、develop 等），不可假设。
+STOP 等待用户回复。
 
-用户回复后，STOP 等待。
+```
+后端生产分支名称（如 main/master/release_prd/develop）：
+```
+
+STOP 等待用户回复。
+
+```
+前端项目 git 地址或本地路径（没有可输入"跳过"）：
+```
+
+STOP 等待用户回复。如果用户输入了前端地址，继续问：
+
+```
+前端生产分支名称（如 main/master/release_prd/develop）：
+```
+
+STOP 等待用户回复。
+
+注意：生产分支名称**没有默认值**，必须让用户明确填写。不同项目生产分支命名差异大（main、master、prd、release_prd、develop 等），不可假设。
 
 #### 输入格式识别
 
@@ -70,11 +83,11 @@ fi
 
 - 知识库根目录名 = git 仓库名（如 `pur-center`、`srm-web`），自动从 git 地址解析
 - clone 到 `{当前目录}/{知识库名}/code/{repo-name}/`
-- 使用 `git clone --depth 1 --branch {主分支名} {地址}` 浅克隆指定分支
+- 使用 `git clone --depth 1 --branch {生产分支名} {地址}` 浅克隆指定分支
 - clone 完成后，对每个源执行 Auto-detect 判断类型（后端/前端）
 - 如果 clone 失败，提示用户检查地址、分支名和权限，STOP 等待
 
-主分支名称用于：
+生产分支名称用于：
 - clone 时拉取该分支代码
 - 增量更新时作为 git diff 的基准分支
 
@@ -238,7 +251,7 @@ If only one main/master branch → auto-use. If ambiguous → ask user:
 2. origin/develop
 3. origin/release/v2.0
 
-请选择作为知识库基准的主分支：>
+请选择作为知识库基准的生产分支：>
 ```
 
 **Stop and wait for user reply.**
@@ -262,7 +275,7 @@ For each source type, collect path → detect main branch → select modules/dir
 **后端项目收集：**
 ```
 后端项目路径：> /path/to/ehr-core
-主分支确认：origin/main ✓
+生产分支确认：origin/main ✓
 
 检测到以下模块：
 1. user-service
@@ -275,7 +288,7 @@ For each source type, collect path → detect main branch → select modules/dir
 **前端项目收集：**
 ```
 前端项目路径：> /path/to/ehr-web
-主分支确认：origin/main ✓
+生产分支确认：origin/main ✓
 检测到框架：Vue 3 + Vite + TypeScript
 
 检测到以下目录结构：
@@ -294,7 +307,7 @@ For each source type, collect path → detect main branch → select modules/dir
 **数据库收集：**
 ```
 复用后端配置文件中的数据源，还是手动填写？
-1. 从后端配置文件检测（基于主分支的配置）
+1. 从后端配置文件检测（基于生产分支的配置）
 2. 手动填写连接信息
 
 >
