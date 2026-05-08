@@ -487,15 +487,23 @@ spring:
 
 Extract: host, port, database name, username, password, **database type** from each datasource.
 
+**重要：密码提取注意事项：**
+- password 字段必须完整读取，不可截断或替换
+- 密码可能是长字符串（如 `JAcp9GnzqEUxuayx4xTVHydnSoyYbIkz`），不要与 username 混淆
+- 如果 password 字段引用了环境变量（如 `${DB_PASSWORD}`），提示用户手动输入密码
+- 传参给 db-query.js 时，密码必须用单引号包裹防止 shell 解析特殊字符
+
 **Step 2 — Confirm with user:**
 
 Always confirm before connecting to any database, regardless of how many datasources are found.
 
+确认时**必须显示密码（脱敏）**让用户核实：
+
 **If datasource(s) found in config:**
 ```
 检测到以下数据源：
-1. {name} → {type} {database}@{host}:{port} (user: {username})
-2. {name} → {type} {database}@{host}:{port} (user: {username})
+1. {name} → {type} {database}@{host}:{port} (user: {username}, password: {前4位}***{后4位})
+2. {name} → {type} {database}@{host}:{port} (user: {username}, password: {前4位}***{后4位})
 
 请输入要扫描的编号（逗号分隔），或 all 全部扫描，或 skip 跳过数据库扫描：
 ```
