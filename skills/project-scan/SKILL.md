@@ -85,7 +85,18 @@ STOP 等待用户回复。用户回复"继续"后：
 ├── prd/                       ← 用户放入的 PRD 文档
 ├── CLAUDE.md                  ← AI 入口索引
 ├── project-knowledge.md       ← 聚合文档
-├── ai/                        ← AI 上下文文件
+├── ai/                        ← AI 上下文文件（按项目分类）
+│   ├── backend/
+│   │   ├── architecture.md
+│   │   ├── api.md
+│   │   ├── database-schema.md
+│   │   └── business-flow.md
+│   ├── frontend/
+│   │   ├── routes.md
+│   │   ├── api-calls.md
+│   │   ├── state-management.md
+│   │   └── components.md
+│   └── cross-reference.md     ← 前后端交叉引用
 ├── test-data/                 ← 测试数据
 └── .scan-state.json           ← 扫描状态
 ```

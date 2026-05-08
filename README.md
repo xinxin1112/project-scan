@@ -67,14 +67,18 @@ project-root/
 ├── prd/                               ← 用户放入的 PRD 文档
 ├── CLAUDE.md                          ← AI 入口索引
 ├── project-knowledge.md               ← 聚合文档（含 Mermaid 图）
-├── ai/                                ← 拆分的 AI 上下文文件
-│   ├── backend-api.md
-│   ├── backend-architecture.md
-│   ├── database-schema.md
-│   ├── frontend-routes.md
-│   ├── frontend-api-calls.md
-│   ├── cross-reference.md
-│   └── ...
+├── ai/                                ← AI 上下文文件（按项目分类）
+│   ├── backend/
+│   │   ├── architecture.md
+│   │   ├── api.md
+│   │   ├── database-schema.md
+│   │   └── business-flow.md
+│   ├── frontend/
+│   │   ├── routes.md
+│   │   ├── api-calls.md
+│   │   ├── state-management.md
+│   │   └── components.md
+│   └── cross-reference.md            ← 前后端交叉引用
 ├── test-data/                         ← 测试数据
 └── .scan-state.json                   ← 扫描状态（用于增量更新）
 ```
