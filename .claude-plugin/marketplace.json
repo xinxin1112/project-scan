@@ -1,0 +1,15 @@
+{
+  "name": "project-scan-marketplace",
+  "description": "Project Scan — AI knowledge base generator for codebases",
+  "owner": {
+    "name": "xinxin1112"
+  },
+  "plugins": [
+    {
+      "name": "project-scan",
+      "description": "Scan project codebase to generate AI knowledge base and documentation",
+      "version": "1.0.0",
+      "source": "./"
+    }
+  ]
+}
