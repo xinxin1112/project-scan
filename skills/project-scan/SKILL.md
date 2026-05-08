@@ -421,7 +421,21 @@ Two-pass approach: first scan code artifacts, then connect to test database for 
 
 #### 6B: Database Direct Connection (Java projects with MySQL/PostgreSQL)
 
-**Prerequisite**: `mysql` or `psql` CLI must be available (matching the detected database type). If neither is available, skip 6B and rely on 6A only.
+**Prerequisite check**: 检测 `mysql` 或 `psql` CLI 是否可用（`which mysql` / `which psql`）。
+
+- CLI 可用 → 使用直连方式（下方 Step 1-5）
+- CLI 不可用 → 提示用户选择：
+
+```
+未检测到 mysql/psql 客户端。数据库扫描有以下选项：
+
+1. 从代码推断（解析 Entity 类、MyBatis XML、migration 文件，无需安装任何工具）
+2. 跳过数据库扫描
+```
+
+STOP 等待用户回复。
+
+如果用户选择"从代码推断"，则仅使用 Phase 6A 的结果（Entity/Model 解析），不执行直连。生成的 ER 图基于代码中的注解和关联关系推断，在知识库中标注"（基于代码推断，未直连数据库验证）"。
 
 **Step 1 — Parse datasource config:**
 
