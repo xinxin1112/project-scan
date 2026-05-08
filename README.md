@@ -86,11 +86,14 @@ workspace/
 │   │   │   ├── frontend/
 │   │   │   └── cross-reference.md
 │   │   ├── test-data/
-│   │   └── .scan-state.json
+│   │   └── .vector-store/             ← 向量索引
 │   ├── pur-order/                     ← 模块 B 的知识库
 │   │   └── ...
-│   └── .scan-state.json               ← 项目级状态
+│   ├── .scan-state.json               ← 统一状态（repos + modules）
+│   └── CLAUDE.md                      ← 根级模块索引
 ```
+
+扫描完成后，插件会自动在源码仓库的 CLAUDE.md 中添加 External Knowledge Base 指针，让 AI 从源码目录自动发现知识库和向量索引。
 
 ## 典型使用流程
 
