@@ -220,15 +220,46 @@ async function indexProject(knowledgeBaseDir, options = {}) {
   fs.mkdirSync(path.join(vectorDir, 'code'), { recursive: true });
   fs.mkdirSync(path.join(vectorDir, 'business'), { recursive: true });
 
-  const codeDir = path.join(knowledgeBaseDir, 'code');
+  // Resolve source code paths from .scan-state.json
+  const scanStatePath = path.join(knowledgeBaseDir, '.scan-state.json');
+  const parentDir = path.dirname(knowledgeBaseDir);
+  let sourceCodePaths = [];
+
+  if (fs.existsSync(scanStatePath)) {
+    const state = JSON.parse(fs.readFileSync(scanStatePath, 'utf-8'));
+    for (const source of state.sources || []) {
+      if (source.path) {
+        const absPath = path.resolve(parentDir, source.path);
+        if (fs.existsSync(absPath)) {
+          sourceCodePaths.push({ absPath, type: source.type, name: source.name });
+        }
+      }
+    }
+  }
+
+  // Fallback: check code/ in knowledge base dir or parent
+  if (sourceCodePaths.length === 0) {
+    const codeDir = path.join(knowledgeBaseDir, 'code');
+    if (fs.existsSync(codeDir)) {
+      sourceCodePaths.push({ absPath: codeDir, type: 'mixed', name: 'code' });
+    }
+    const parentCodeDir = path.join(parentDir, 'code');
+    if (!fs.existsSync(path.join(knowledgeBaseDir, 'code')) && fs.existsSync(parentCodeDir)) {
+      sourceCodePaths.push({ absPath: parentCodeDir, type: 'mixed', name: 'code' });
+    }
+  }
+
   const aiDir = path.join(knowledgeBaseDir, 'ai');
   const prdDir = path.join(knowledgeBaseDir, 'prd');
   const businessDir = path.join(aiDir, 'business');
 
-  // Collect code files
+  // Collect source code files from resolved paths
   let codeFiles = [];
-  if (fs.existsSync(codeDir)) {
-    codeFiles = collectFiles(codeDir, CODE_EXTENSIONS, knowledgeBaseDir);
+  for (const src of sourceCodePaths) {
+    const files = collectFiles(src.absPath, CODE_EXTENSIONS, src.absPath);
+    for (const f of files) {
+      codeFiles.push({ relative: f, absBase: src.absPath, module: src.name });
+    }
   }
 
   // Collect ai/ doc files (for code collection)
@@ -236,17 +267,20 @@ async function indexProject(knowledgeBaseDir, options = {}) {
   if (fs.existsSync(aiDir)) {
     const techDirs = ['backend', 'frontend'].map(d => path.join(aiDir, d)).filter(fs.existsSync);
     for (const d of techDirs) {
-      aiDocFiles.push(...collectFiles(d, DOC_EXTENSIONS, knowledgeBaseDir));
+      const files = collectFiles(d, DOC_EXTENSIONS, knowledgeBaseDir);
+      aiDocFiles.push(...files.map(f => ({ relative: f, absBase: knowledgeBaseDir, module: module || '' })));
     }
   }
 
   // Collect business doc files
   let businessFiles = [];
   if (fs.existsSync(businessDir)) {
-    businessFiles = collectFiles(businessDir, DOC_EXTENSIONS, knowledgeBaseDir);
+    const files = collectFiles(businessDir, DOC_EXTENSIONS, knowledgeBaseDir);
+    businessFiles.push(...files.map(f => ({ relative: f, absBase: knowledgeBaseDir, module: module || '' })));
   }
   if (fs.existsSync(prdDir)) {
-    businessFiles.push(...collectFiles(prdDir, DOC_EXTENSIONS, knowledgeBaseDir));
+    const files = collectFiles(prdDir, DOC_EXTENSIONS, knowledgeBaseDir);
+    businessFiles.push(...files.map(f => ({ relative: f, absBase: knowledgeBaseDir, module: module || '' })));
   }
 
   // Filter for incremental
@@ -255,27 +289,27 @@ async function indexProject(knowledgeBaseDir, options = {}) {
 
   if (incremental && changedFiles) {
     const changed = new Set(changedFiles);
-    allCodeSources = allCodeSources.filter(f => changed.has(f));
-    allBusinessSources = allBusinessSources.filter(f => changed.has(f));
+    allCodeSources = allCodeSources.filter(f => changed.has(f.relative));
+    allBusinessSources = allBusinessSources.filter(f => changed.has(f.relative));
   }
 
   // Chunk all files
   const codeChunks = [];
   for (const f of allCodeSources) {
-    const fullPath = path.join(knowledgeBaseDir, f);
+    const fullPath = path.join(f.absBase, f.relative);
     if (!fs.existsSync(fullPath)) continue;
     const content = fs.readFileSync(fullPath, 'utf-8');
     if (!content.trim()) continue;
-    codeChunks.push(...chunkFile(f, content, module));
+    codeChunks.push(...chunkFile(f.relative, content, f.module));
   }
 
   const businessChunks = [];
   for (const f of allBusinessSources) {
-    const fullPath = path.join(knowledgeBaseDir, f);
+    const fullPath = path.join(f.absBase, f.relative);
     if (!fs.existsSync(fullPath)) continue;
     const content = fs.readFileSync(fullPath, 'utf-8');
     if (!content.trim()) continue;
-    businessChunks.push(...chunkFile(f, content, module));
+    businessChunks.push(...chunkFile(f.relative, content, f.module));
   }
 
   console.log(`Code chunks: ${codeChunks.length}, Business chunks: ${businessChunks.length}`);
