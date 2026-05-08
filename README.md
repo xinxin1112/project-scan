@@ -94,17 +94,17 @@ workspace/
 
 > git@github.com:xxx/pur-center.git
 
-2. 后端主分支名称（默认：main）：
+2. 后端主分支名称（如 main/master/develop/release_prd）：
 
-> develop
+> release_prd
 
 3. 前端项目地址/路径（没有可跳过）：
 
 > git@github.com:xxx/srm-web.git
 
-4. 前端主分支名称（默认：main）：
+4. 前端主分支名称（如 main/master/develop/release_prd）：
 
-> develop
+> release_prd
 
 正在 clone 源码（develop 分支）...
 源代码已就绪。如需包含 PRD 文档，请将文件放入：

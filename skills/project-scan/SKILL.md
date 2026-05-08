@@ -43,10 +43,12 @@ Scan any project codebase and generate a dual-format knowledge base: AI context 
 请提供项目源（支持 git 地址或本地路径，可多个）：
 
 1. 后端项目地址/路径：
-2. 后端主分支名称（默认：main）：
+2. 后端主分支名称（如 main/master/develop/release_prd）：
 3. 前端项目地址/路径（没有可跳过）：
-4. 前端主分支名称（默认：main）：
+4. 前端主分支名称（如 main/master/develop/release_prd）：
 ```
+
+注意：主分支名称**没有默认值**，必须让用户明确填写。不同项目主分支命名差异大（main、master、prd、release_prd、develop 等），不可假设。
 
 用户回复后，STOP 等待。收到回答后继续模块选择和扫描。
 
