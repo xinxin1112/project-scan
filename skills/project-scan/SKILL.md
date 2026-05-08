@@ -67,21 +67,44 @@ Scan any project codebase and generate a dual-format knowledge base: AI context 
 
 #### 多模块检测
 
-clone 完成后，检测项目是否为多模块（Gradle multi-module / Maven multi-module / Turborepo 等）：
-- 是多模块 → 列出所有模块，询问用户要扫描哪些模块
-- 用户选择模块后，**按模块名建立知识库子目录**，每个模块独立生成知识库
+clone 完成后，**分别**检测后端和前端是否为多模块项目：
+
+**后端多模块检测：**
+- Gradle multi-module：根目录有 `settings.gradle(.kts)`，解析 `include` 语句
+- Maven multi-module：根 `pom.xml` 有 `<modules>` 标签
+
+**前端多模块检测：**
+- Turborepo / pnpm workspace：检查 `turbo.json`、`pnpm-workspace.yaml`、根 `package.json` 的 `workspaces` 字段
+- 扫描 `apps/` 或 `packages/` 目录下的子项目（每个有独立 `package.json` 的目录）
+
+检测到多模块后，**分别询问**：
 
 ```
-检测到多模块项目，包含以下模块：
+检测到后端多模块项目，包含以下模块：
 - pur-order
 - pur-reconcile
 - pur-supplier
 - ...
 
-请选择要扫描的模块（逗号分隔，或输入 all）：
+请选择要扫描的后端模块（逗号分隔，或输入 all）：
+```
+
+STOP 等待用户回复。收到回答后继续：
+
+```
+检测到前端多模块项目，包含以下应用：
+- acceptance-mng
+- order-mng
+- reconcile-mng
+- supplier-c
+- ...
+
+请选择要扫描的前端应用（逗号分隔，或输入 all，或跳过）：
 ```
 
 STOP 等待用户回复。
+
+用户选择模块后，**按后端模块名建立知识库子目录**，前端选择的应用作为该模块知识库中 `ai/frontend/` 的扫描范围。
 
 #### PRD 目录
 
