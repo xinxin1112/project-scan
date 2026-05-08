@@ -61,7 +61,7 @@ Scan any project codebase and generate a dual-format knowledge base: AI context 
 
 #### PRD 目录
 
-clone 完成后，在输出目录创建 `prd/` 子目录，并提示：
+clone 完成后，**必须执行** `mkdir -p {输出目录}/prd/` 创建 PRD 目录，然后提示：
 
 ```
 源代码已就绪。如需包含 PRD 文档，请将文件放入：
