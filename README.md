@@ -14,10 +14,11 @@ Claude Code 插件 — 扫描项目代码库，自动生成 AI 知识库（CLAUD
 - **多源扫描** — 同时扫描前端（Vue/React）+ 后端 + PRD 文档 + 数据库，生成统一知识库
 - **数据库直连** — 自动解析表结构、推断关系、采样测试数据
 - **业务知识提取** — 生成术语表、业务规则、流程图、数据字典（业务+开发共用）
-- **向量索引** — 代码切片 + embedding 入库，支持语义检索（配合 vector-search 插件）
+- **向量索引 + 语义检索** — 代码切片 + embedding 入库，内置语义检索命令
 - **Mermaid 图表** — 自动生成 ER 图、时序图、状态图、业务流程图
 - **增量更新** — 基于 git diff 只更新变更部分，保持知识库常新
 - **自动保鲜** — AI 读取知识库时自动检测过期模块，提示更新
+- **定时自动更新** — 配置每日定时任务，自动检查生产分支变更并增量更新（macOS + Windows）
 
 ## 安装
 
@@ -46,7 +47,12 @@ claude plugin install project-scan
 /project-scan update       # 增量更新（基于 git diff）
 /project-scan check        # 检查知识库新鲜度
 /project-scan add-source   # 追加新数据源
+/project-scan vector       # 生成向量索引
 /project-scan reindex      # 全量重建向量索引
+/project-scan search <query>  # 语义检索代码和文档
+/project-scan auto-update     # 配置定时自动更新
+/project-scan auto-update off # 关闭定时自动更新
+/project-scan auto-update status # 查看自动更新状态
 ```
 
 ## 输出结构
@@ -195,20 +201,30 @@ workspace/
 - Ollama 本地运行（`brew install ollama && ollama serve && ollama pull nomic-embed-text`）
 - 设置 OpenAI API key（`export OPENAI_API_KEY=xxx`）
 
-**配合 vector-search 插件使用：**
+**使用方式：**
 
-```bash
-# 安装检索插件
-claude plugin marketplace add xinxin1112/vector-search
-claude plugin install vector-search
-
-# 语义搜索
-/vector-search 退款超时处理逻辑
-/vector-search --type=business 对账流程
-/vector-search --type=code 用户权限校验
+```
+/project-scan search 退款超时处理逻辑
+/project-scan search --type=business 对账流程
+/project-scan search --type=code 用户权限校验
 ```
 
-详见 [vector-search](https://github.com/xinxin1112/vector-search) 插件。
+索引范围包括：
+- 知识库文档（`ai/backend/`、`ai/frontend/`）
+- 源码文件（从 `.scan-state.json` 中声明的源码路径自动解析）
+- PRD 文档（`prd/` 目录）
+
+## 定时自动更新（可选）
+
+配置后每天定时检查生产分支变更，自动增量更新知识库和向量索引：
+
+```
+/project-scan auto-update          # 交互式配置（会询问是否启用、更新时间）
+/project-scan auto-update off      # 关闭
+/project-scan auto-update status   # 查看状态
+```
+
+支持 macOS（launchd）和 Windows（Task Scheduler）。
 
 ## 已知问题
 
