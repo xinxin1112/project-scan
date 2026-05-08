@@ -7,6 +7,18 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 
 Scan any project codebase and generate a dual-format knowledge base: AI context (CLAUDE.md) + human-readable documentation (docs/project-knowledge.md).
 
+## 初始化（每次执行 /project-scan 时首先运行）
+
+```bash
+# 检测并安装依赖
+if [ ! -d "${CLAUDE_PLUGIN_ROOT}/node_modules/mysql2" ]; then
+  echo "正在安装数据库依赖..."
+  cd ${CLAUDE_PLUGIN_ROOT} && npm install --silent
+fi
+```
+
+此步骤在插件启动时自动执行，确保后续数据库扫描可用。如果 npm install 失败则跳过，不影响其他功能。
+
 ## Argument Dispatch
 
 | Argument | Mode | Output |
@@ -421,26 +433,11 @@ Two-pass approach: first scan code artifacts, then connect to test database for 
 
 #### 6B: Database Direct Connection (Java projects with MySQL/PostgreSQL)
 
-**Prerequisite check**: 自动检测并准备数据库连接环境。
-
-**Step 0 — 确保 mysql2 已安装：**
-
-```bash
-# 检查插件目录下是否已安装 mysql2
-if [ ! -d "${CLAUDE_PLUGIN_ROOT}/node_modules/mysql2" ]; then
-  cd ${CLAUDE_PLUGIN_ROOT} && npm install --silent
-fi
-```
-
-如果 `npm install` 失败（无网络等），回退到代码推断方式。
-
-**数据库查询统一使用插件自带脚本：**
+**数据库查询使用插件自带脚本（mysql2 已在初始化阶段安装）：**
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/db-query.js <host> <port> <user> <password> <database> "<SQL>"
 ```
-
-该脚本基于 mysql2 包，无需系统安装 mysql CLI、Docker 等工具。
 
 **如果连接失败（网络不通、密码错误等）：**
 
