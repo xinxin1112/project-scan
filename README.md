@@ -183,6 +183,15 @@ workspace/
 
 扫描状态保存在 `.scan-state.json` 中，支持后续增量更新和新鲜度检查。
 
+## 已知问题
+
+`claude plugin update project-scan` 可能不会自动拉取最新版本（本地 marketplace 缓存未执行 git pull）。如果更新后版本号没变，手动执行：
+
+```bash
+cd ~/.claude/plugins/marketplaces/project-scan-marketplace && git pull origin main
+claude plugin install project-scan
+```
+
 ## License
 
 MIT
