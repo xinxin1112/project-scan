@@ -30,7 +30,8 @@ claude plugin install project-scan
 ## 更新
 
 ```bash
-claude plugin update project-scan
+cd ~/.claude/plugins/marketplaces/project-scan-marketplace && git pull origin main
+claude plugin install project-scan
 ```
 
 ## 使用
@@ -185,12 +186,7 @@ workspace/
 
 ## 已知问题
 
-`claude plugin update project-scan` 可能不会自动拉取最新版本（本地 marketplace 缓存未执行 git pull）。如果更新后版本号没变，手动执行：
-
-```bash
-cd ~/.claude/plugins/marketplaces/project-scan-marketplace && git pull origin main
-claude plugin install project-scan
-```
+- `claude plugin update project-scan` 不可用，请使用上方"更新"章节的手动方式
 
 ## License
 
