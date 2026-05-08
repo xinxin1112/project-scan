@@ -61,6 +61,10 @@ project-root/
 
 ```
 {output-dir}/
+├── .sources/                          ← clone 的源码（可删除）
+│   ├── backend-repo/
+│   └── frontend-repo/
+├── prd/                               ← 用户放入的 PRD 文档
 ├── CLAUDE.md                          ← AI 入口索引
 ├── project-knowledge.md               ← 聚合文档（含 Mermaid 图）
 ├── ai/                                ← 拆分的 AI 上下文文件
@@ -75,6 +79,34 @@ project-root/
 └── .scan-state.json                   ← 扫描状态（用于增量更新）
 ```
 
+## 典型使用流程
+
+```
+> /project-scan
+
+请提供项目源（支持 git 地址或本地路径）：
+1. 后端项目地址/路径：
+
+> git@github.com:xxx/backend.git
+
+2. 前端项目地址/路径（没有可跳过）：
+
+> git@github.com:xxx/frontend.git
+
+知识库输出目录（默认：当前目录）：
+
+> ./my-project-docs
+
+正在 clone 源码...
+源代码已就绪。如需包含 PRD 文档，请将文件放入：
+  ./my-project-docs/prd/
+放好后回复"继续"开始扫描。
+
+> 继续
+
+扫描中...
+```
+
 ## 自动检测逻辑
 
 运行 `/project-scan` 时，插件会自动判断模式：
@@ -84,10 +116,10 @@ project-root/
 ├── 是 → 多源模式（提示：update / add-source / 重新扫描）
 ├── 否 → 当前目录有构建文件（pom.xml / build.gradle / package.json）？
 │         ├── 是 → 单项目扫描
-│         └── 否 → 询问项目路径，然后根据路径内容决定模式
+│         └── 否 → 询问 git 地址或项目路径
 ```
 
-可以在任意目录运行，插件会引导你输入项目路径。
+支持直接提供 git 仓库地址，插件会自动 clone 并扫描。
 
 ## 支持的技术栈
 
