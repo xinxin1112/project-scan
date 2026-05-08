@@ -9,7 +9,9 @@ async function detectProvider() {
       const hasNomic = res.models.some(m => m.name && m.name.includes('nomic-embed-text'));
       if (hasNomic) return { provider: 'ollama', model: 'nomic-embed-text', dimensions: 768 };
       if (res.models.length > 0) {
+        console.error('Ollama detected but nomic-embed-text not found. Pulling model (this may take a few minutes)...');
         await pullModel('nomic-embed-text');
+        console.error('Model pulled successfully.');
         return { provider: 'ollama', model: 'nomic-embed-text', dimensions: 768 };
       }
     }

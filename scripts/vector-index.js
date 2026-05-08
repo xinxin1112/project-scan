@@ -89,7 +89,6 @@ function splitLongChunk(chunk) {
   if (chunk.text.length <= maxChars) return [chunk];
 
   const results = [];
-  let start = 0;
   const lines = chunk.text.split('\n');
   let charCount = 0;
   let lineStart = chunk.lineStart;
@@ -108,8 +107,9 @@ function splitLongChunk(chunk) {
       });
       const overlapLines = Math.ceil(overlapChars / 80);
       const backtrack = Math.min(overlapLines, chunkLines.length);
+      const newStart = lineStart + chunkLines.length - backtrack;
       chunkLines = chunkLines.slice(-backtrack);
-      lineStart = lineStart + chunkLines.length - backtrack;
+      lineStart = newStart;
       charCount = chunkLines.join('\n').length;
     }
   }
@@ -350,13 +350,20 @@ if (require.main === module) {
   const [,, command, knowledgeBaseDir, ...rest] = process.argv;
 
   if (!command || !knowledgeBaseDir) {
-    console.error('Usage: vector-index.js <index|reindex> <knowledge-base-dir> [--module=name]');
+    console.error('Usage: vector-index.js <index|reindex> <knowledge-base-dir> [--module=name] [--incremental] [--changed=file]');
     process.exit(1);
   }
 
   const options = {};
   for (const arg of rest) {
     if (arg.startsWith('--module=')) options.module = arg.split('=')[1];
+    else if (arg === '--incremental') options.incremental = true;
+    else if (arg.startsWith('--changed=')) {
+      const changedFile = arg.split('=')[1];
+      if (fs.existsSync(changedFile)) {
+        options.changedFiles = fs.readFileSync(changedFile, 'utf-8').split('\n').filter(Boolean);
+      }
+    }
   }
 
   if (command === 'reindex') {

@@ -40,10 +40,10 @@ async function search(vectorStoreDir, query, options = {}) {
 
   for (const tableName of searchTables) {
     const table = await db.openTable(tableName);
-    const results = await table.search(queryVector).limit(topK).toArray();
+    const results = await table.search(queryVector).distanceType('cosine').limit(topK).toArray();
 
     for (const row of results) {
-      const score = 1 - (row._distance || 0);
+      const score = Math.round((1 - (row._distance || 0)) * 100) / 100;
       if (score >= threshold) {
         allResults.push({
           score: Math.round(score * 100) / 100,
