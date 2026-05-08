@@ -1,6 +1,6 @@
 {
   "name": "project-scan",
-  "version": "1.8.0",
+  "version": "1.9.1",
   "description": "Scan project codebase to generate AI knowledge base (CLAUDE.md) and human-readable documentation. Supports Java/Spring, Vue, React, multi-source scanning with database, PRD extraction, and cross-reference mapping.",
   "author": {
     "name": "xinxin1112"
