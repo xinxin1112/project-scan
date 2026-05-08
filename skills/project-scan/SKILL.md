@@ -34,38 +34,48 @@ Scan any project codebase and generate a dual-format knowledge base: AI context 
 当前目录无法识别为项目时，进入交互式源收集。逐步询问：
 
 ```
-请提供项目源（支持 git 地址或本地路径，可多个）：
-
-1. 后端项目地址/路径：
-2. 前端项目地址/路径（没有可跳过）：
+请为本次扫描命名（用作知识库目录名，如：pur-reconcile）：
 ```
 
 用户回复后，STOP 等待。收到回答后继续：
 
 ```
-知识库输出目录（默认：当前目录）：
+请提供项目源（支持 git 地址或本地路径，可多个）：
+
+1. 后端项目地址/路径：
+2. 后端主分支名称（默认：main）：
+3. 前端项目地址/路径（没有可跳过）：
+4. 前端主分支名称（默认：main）：
 ```
+
+用户回复后，STOP 等待。收到回答后继续模块选择和扫描。
+
+主分支名称用于：
+- clone 时拉取该分支代码
+- 增量更新时作为 git diff 的基准分支
 
 #### 输入格式识别
 
 | 输入格式 | 处理方式 |
 |----------|----------|
-| `git@...` 或 `https://...*.git` | git clone 到 `{输出目录}/.sources/{repo-name}/` |
+| `git@...` 或 `https://...*.git` | git clone 到 `{当前目录}/{项目名}/.sources/{repo-name}/` |
 | 绝对/相对路径 | 直接使用该路径 |
 
 #### Clone 行为
 
-- clone 到 `{输出目录}/.sources/{repo-name}/`，使用 `--depth 1` 浅克隆节省空间
+- clone 到 `{当前目录}/{项目名}/.sources/{repo-name}/`
+- 使用 `git clone --depth 1 --branch {分支名} {地址}` 浅克隆指定分支
+- 如果用户未指定分支，使用仓库默认分支（不传 --branch 参数）
 - clone 完成后，对每个源执行 Auto-detect 判断类型（后端/前端）
-- 如果 clone 失败，提示用户检查地址和权限，STOP 等待
+- 如果 clone 失败，提示用户检查地址、分支名和权限，STOP 等待
 
 #### PRD 目录
 
-clone 完成后，**必须执行** `mkdir -p {输出目录}/prd/` 创建 PRD 目录，然后提示：
+clone 完成后，**必须执行** `mkdir -p {当前目录}/{项目名}/prd/` 创建 PRD 目录，然后提示：
 
 ```
 源代码已就绪。如需包含 PRD 文档，请将文件放入：
-  {输出目录}/prd/
+  {当前目录}/{项目名}/prd/
 
 放好后回复"继续"开始扫描，或直接回复"继续"跳过 PRD。
 ```
@@ -77,31 +87,26 @@ STOP 等待用户回复。用户回复"继续"后：
 
 #### 输出目录结构
 
-```
-{输出目录}/
-├── .sources/                  ← git clone 的源码（可删除）
-│   ├── backend-repo/
-│   └── frontend-repo/
-├── prd/                       ← 用户放入的 PRD 文档
-├── CLAUDE.md                  ← AI 入口索引
-├── project-knowledge.md       ← 聚合文档
-├── ai/                        ← AI 上下文文件（按项目分类）
-│   ├── backend/
-│   │   ├── architecture.md
-│   │   ├── api.md
-│   │   ├── database-schema.md
-│   │   └── business-flow.md
-│   ├── frontend/
-│   │   ├── routes.md
-│   │   ├── api-calls.md
-│   │   ├── state-management.md
-│   │   └── components.md
-│   └── cross-reference.md     ← 前后端交叉引用
-├── test-data/                 ← 测试数据
-└── .scan-state.json           ← 扫描状态
-```
+每个项目独立一个目录，支持在同一位置生成多个项目的知识库：
 
-知识库输出位置默认为用户指定的输出目录。
+```
+{当前目录}/
+├── {项目名-1}/                ← 第一个项目的知识库
+│   ├── .sources/              ← git clone 的源码（可删除）
+│   │   ├── backend-repo/
+│   │   └── frontend-repo/
+│   ├── prd/                   ← 用户放入的 PRD 文档
+│   ├── CLAUDE.md              ← AI 入口索引
+│   ├── project-knowledge.md   ← 聚合文档
+│   ├── ai/
+│   │   ├── backend/
+│   │   ├── frontend/
+│   │   └── cross-reference.md
+│   ├── test-data/
+│   └── .scan-state.json
+├── {项目名-2}/                ← 第二个项目的知识库
+│   └── ...
+```
 
 ### 单项目与多源模式共存
 

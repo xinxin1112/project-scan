@@ -59,28 +59,25 @@ project-root/
 
 ### 多源模式
 
+每个项目独立一个目录，支持在同一位置管理多个项目的知识库：
+
 ```
-{output-dir}/
-├── .sources/                          ← clone 的源码（可删除）
-│   ├── backend-repo/
-│   └── frontend-repo/
-├── prd/                               ← 用户放入的 PRD 文档
-├── CLAUDE.md                          ← AI 入口索引
-├── project-knowledge.md               ← 聚合文档（含 Mermaid 图）
-├── ai/                                ← AI 上下文文件（按项目分类）
-│   ├── backend/
-│   │   ├── architecture.md
-│   │   ├── api.md
-│   │   ├── database-schema.md
-│   │   └── business-flow.md
-│   ├── frontend/
-│   │   ├── routes.md
-│   │   ├── api-calls.md
-│   │   ├── state-management.md
-│   │   └── components.md
-│   └── cross-reference.md            ← 前后端交叉引用
-├── test-data/                         ← 测试数据
-└── .scan-state.json                   ← 扫描状态（用于增量更新）
+workspace/
+├── pur-reconcile/                     ← 项目 A 的知识库
+│   ├── .sources/                      ← clone 的源码（可删除）
+│   │   ├── pur-center/
+│   │   └── srm-web/
+│   ├── prd/                           ← PRD 文档
+│   ├── CLAUDE.md
+│   ├── project-knowledge.md
+│   ├── ai/
+│   │   ├── backend/
+│   │   ├── frontend/
+│   │   └── cross-reference.md
+│   ├── test-data/
+│   └── .scan-state.json
+├── pur-order/                         ← 项目 B 的知识库
+│   └── ...
 ```
 
 ## 典型使用流程
@@ -88,22 +85,30 @@ project-root/
 ```
 > /project-scan
 
-请提供项目源（支持 git 地址或本地路径）：
+请为本次扫描命名（用作知识库目录名）：
+
+> pur-reconcile
+
+请提供项目源：
 1. 后端项目地址/路径：
 
-> git@github.com:xxx/backend.git
+> git@github.com:xxx/pur-center.git
 
-2. 前端项目地址/路径（没有可跳过）：
+2. 后端主分支名称（默认：main）：
 
-> git@github.com:xxx/frontend.git
+> develop
 
-知识库输出目录（默认：当前目录）：
+3. 前端项目地址/路径（没有可跳过）：
 
-> ./my-project-docs
+> git@github.com:xxx/srm-web.git
 
-正在 clone 源码...
+4. 前端主分支名称（默认：main）：
+
+> develop
+
+正在 clone 源码（develop 分支）...
 源代码已就绪。如需包含 PRD 文档，请将文件放入：
-  ./my-project-docs/prd/
+  ./pur-reconcile/prd/
 放好后回复"继续"开始扫描。
 
 > 继续
