@@ -1480,48 +1480,55 @@ Aggregate from ai/ files, including:
 
 **Bridging (让 AI 发现知识库):**
 
-After scan, append to each source project's CLAUDE.md:
+After scan, perform these bridging steps to ensure AI tools can discover the knowledge base from source code directories:
+
+1. **Source repo CLAUDE.md pointers** — For each source repo in `.scan-state.json`, append (or update) a pointer block in its CLAUDE.md. Use `<!-- MANUAL ADDITIONS START/END -->` markers to avoid conflicts with other tools:
+
 ```markdown
+<!-- MANUAL ADDITIONS START -->
 ## External Knowledge Base
-- [{knowledge-base-name}]({output-dir}/CLAUDE.md)
+- [{module-name} 知识库]({relative-path-to-module}/CLAUDE.md)
+<!-- MANUAL ADDITIONS END -->
 ```
 
-**.scan-state.json:**
+The relative path must be computed from the source repo root to the module knowledge base directory. Example: if source is at `code/pur-center/` and knowledge base is at `pur-reconcile/`, the path is `../../pur-reconcile/CLAUDE.md`.
 
-Write scan state to `{output-dir}/.scan-state.json`:
+If the source repo CLAUDE.md doesn't exist, create a minimal one with just the pointer block.
+
+2. **Root CLAUDE.md** — Create/update `{knowledge-base-root}/CLAUDE.md` as a module index containing:
+   - Module table (name, description, link to module CLAUDE.md)
+   - Source repo table (name, path, branch, type)
+   - Brief vector search usage note
+
+3. **Update existing pointers** — If the marker block already exists, replace its content rather than appending a duplicate.
+
+**.scan-state.json (root-level, unified format):**
+
+Write scan state to `{knowledge-base-root}/.scan-state.json`:
 ```json
 {
-  "sources": [
-    {
-      "type": "backend",
-      "path": "/path/to/ehr-core",
-      "modules": ["user-service", "order-service"],
-      "mainBranch": "main",
-      "commits": {
-        "user-service": "abc123",
-        "order-service": "def456"
-      }
-    },
-    {
-      "type": "frontend",
-      "path": "/path/to/ehr-web",
-      "selectedDirectories": ["src/views/user/", "src/views/order/"],
-      "scannedPaths": ["src/views/user/", "src/views/order/", "src/api/", "src/stores/", "src/router/"],
-      "mainBranch": "main",
-      "commit": "ghi789"
-    },
-    {
-      "type": "document",
-      "path": "/path/to/ehr-prd.pdf",
-      "mtime": "2026-05-08T10:30:00",
-      "size": 2048576
+  "version": "1.7.0",
+  "lastScan": "2026-05-08",
+  "mode": "multi-source",
+  "repos": {
+    "repo-name": { "path": "code/repo-name", "branch": "main", "type": "backend" }
+  },
+  "modules": {
+    "module-name": {
+      "lastScan": "2026-05-08",
+      "sources": [
+        { "type": "backend", "name": "source-name", "repo": "repo-name", "subpath": "app/module" }
+      ],
+      "commits": { "source-name": "abc123def" },
+      "phases": { "phase1-detection": { "status": "completed", "date": "2026-05-08" } }
     }
-  ],
-  "gatewayRule": "/api/{module}/** → {module-service}/**",
-  "output": "/path/to/ehr-knowledge-base",
-  "lastScan": "2026-05-08"
+  },
+  "gateway": { "rule": "...", "description": "..." },
+  "database": { "type": "mysql", "host": "...", "port": 3306, "database": "...", "username": "..." }
 }
 ```
+
+Module-level `.scan-state.json` files are NOT created — all state lives at the root.
 
 ## Output Generation
 

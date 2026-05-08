@@ -70,21 +70,23 @@ function findVectorStore(startDir) {
   const claudeMd = path.join(startDir, 'CLAUDE.md');
   if (fs.existsSync(claudeMd)) {
     const content = fs.readFileSync(claudeMd, 'utf-8');
-    const match = content.match(/\[.*?\]\((.+?)\/CLAUDE\.md\)/);
-    if (match) {
-      const kbDir = path.resolve(startDir, match[1]);
+    const pointerMatch = content.match(/<!-- MANUAL ADDITIONS START -->[\s\S]*?\[.*?\]\((.+?)\/CLAUDE\.md\)[\s\S]*?<!-- MANUAL ADDITIONS END -->/);
+    if (pointerMatch) {
+      const kbDir = path.resolve(startDir, pointerMatch[1]);
       const vs = path.join(kbDir, '.vector-store');
       if (fs.existsSync(vs)) return vs;
     }
   }
 
-  // Strategy 2: Check .scan-state.json
+  // Strategy 2: Check .scan-state.json (root-level with modules)
   const scanState = path.join(startDir, '.scan-state.json');
   if (fs.existsSync(scanState)) {
     const state = JSON.parse(fs.readFileSync(scanState, 'utf-8'));
-    if (state.output) {
-      const vs = path.join(state.output, '.vector-store');
-      if (fs.existsSync(vs)) return vs;
+    if (state.modules) {
+      for (const modName of Object.keys(state.modules)) {
+        const vs = path.join(startDir, modName, '.vector-store');
+        if (fs.existsSync(vs)) return vs;
+      }
     }
   }
 
@@ -92,11 +94,24 @@ function findVectorStore(startDir) {
   const direct = path.join(startDir, '.vector-store');
   if (fs.existsSync(direct)) return direct;
 
-  // Strategy 4: Search parent directories
-  const parent = path.dirname(startDir);
-  if (parent !== startDir) {
-    const parentVs = path.join(parent, '.vector-store');
-    if (fs.existsSync(parentVs)) return parentVs;
+  // Strategy 4: Walk up to find .scan-state.json or .vector-store
+  let current = path.dirname(startDir);
+  const root = path.parse(current).root;
+  for (let depth = 0; depth < 6 && current !== root; depth++) {
+    const vs = path.join(current, '.vector-store');
+    if (fs.existsSync(vs)) return vs;
+
+    const parentScan = path.join(current, '.scan-state.json');
+    if (fs.existsSync(parentScan)) {
+      const state = JSON.parse(fs.readFileSync(parentScan, 'utf-8'));
+      if (state.modules) {
+        for (const modName of Object.keys(state.modules)) {
+          const modVs = path.join(current, modName, '.vector-store');
+          if (fs.existsSync(modVs)) return modVs;
+        }
+      }
+    }
+    current = path.dirname(current);
   }
 
   return null;

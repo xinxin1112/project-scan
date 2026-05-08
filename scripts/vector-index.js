@@ -13,7 +13,7 @@ const CODE_EXTENSIONS = new Set([
   '.java', '.kt', '.ts', '.tsx', '.js', '.jsx', '.vue', '.py', '.go', '.rs'
 ]);
 
-const DOC_EXTENSIONS = new Set(['.md']);
+const DOC_EXTENSIONS = new Set(['.md', '.txt']);
 
 const METHOD_PATTERNS = {
   java: /^\s*(public|private|protected|static|\s)*[\w<>\[\]]+\s+\w+\s*\(/,
@@ -303,6 +303,20 @@ async function indexProject(knowledgeBaseDir, options = {}) {
   if (fs.existsSync(prdDir)) {
     const files = collectFiles(prdDir, DOC_EXTENSIONS, knowledgeBaseDir);
     businessFiles.push(...files.map(f => ({ relative: f, absBase: knowledgeBaseDir, module: module || '' })));
+  }
+  // Include business-flows.md from ai/backend/ if ai/business/ doesn't exist
+  if (!fs.existsSync(businessDir)) {
+    const backendDir = path.join(aiDir, 'backend');
+    if (fs.existsSync(backendDir)) {
+      const businessFlowFiles = ['business-flows.md', 'database-enums.md'];
+      for (const bf of businessFlowFiles) {
+        const bfPath = path.join(backendDir, bf);
+        if (fs.existsSync(bfPath)) {
+          const rel = path.relative(knowledgeBaseDir, bfPath);
+          businessFiles.push({ relative: rel, absBase: knowledgeBaseDir, module: module || '' });
+        }
+      }
+    }
   }
 
   // Filter for incremental
