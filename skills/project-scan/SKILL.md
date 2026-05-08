@@ -421,21 +421,59 @@ Two-pass approach: first scan code artifacts, then connect to test database for 
 
 #### 6B: Database Direct Connection (Java projects with MySQL/PostgreSQL)
 
-**Prerequisite check**: 检测 `mysql` 或 `psql` CLI 是否可用（`which mysql` / `which psql`）。
+**Prerequisite check**: 按优先级检测可用的数据库连接方式：
 
-- CLI 可用 → 使用直连方式（下方 Step 1-5）
-- CLI 不可用 → 提示用户选择：
+```bash
+# 优先级 1：mysql/psql CLI
+which mysql || which psql
 
+# 优先级 2：Docker
+which docker
+
+# 优先级 3：Node.js (npx)
+which npx
 ```
-未检测到 mysql/psql 客户端。数据库扫描有以下选项：
 
-1. 从代码推断（解析 Entity 类、MyBatis XML、migration 文件，无需安装任何工具）
-2. 跳过数据库扫描
+**连接方式自动选择：**
+
+| 优先级 | 检测条件 | 连接方式 |
+|--------|----------|----------|
+| 1 | `mysql`/`psql` CLI 可用 | 直接执行 `mysql -h ... -e "SQL"` |
+| 2 | `docker` 可用 | `docker run --rm mysql:8 mysql -h host -P port -u user -p'pass' db -e "SQL"` |
+| 3 | `npx` 可用 | 生成临时 JS 脚本，通过 `npx mysql2` 执行查询（见下方模板） |
+| 无 | 以上都不可用 | 从代码推断（Entity 类、MyBatis XML、migration 文件） |
+
+**npx 连接模板（优先级 3）：**
+
+当仅有 Node.js 环境时，生成临时脚本执行查询：
+```bash
+npx -y mysql2 -e "
+const mysql = require('mysql2/promise');
+(async () => {
+  const conn = await mysql.createConnection({
+    host: '{host}', port: {port}, user: '{user}', password: '{password}', database: '{database}'
+  });
+  const [rows] = await conn.execute('{SQL}');
+  console.log(JSON.stringify(rows, null, 2));
+  await conn.end();
+})();
+"
 ```
 
-STOP 等待用户回复。
+注意：如果 `npx mysql2` 不可用，改用以下方式：
+```bash
+mkdir -p /tmp/db-scan && cd /tmp/db-scan && npm init -y > /dev/null 2>&1 && npm install mysql2 --silent && node -e "上述脚本内容" && rm -rf /tmp/db-scan
+```
 
-如果用户选择"从代码推断"，则仅使用 Phase 6A 的结果（Entity/Model 解析），不执行直连。生成的 ER 图基于代码中的注解和关联关系推断，在知识库中标注"（基于代码推断，未直连数据库验证）"。
+**Docker 连接注意事项：**
+- 使用 `--rm` 避免残留容器
+- 使用 `--network host` 确保能访问宿主机网络的数据库
+- MySQL: `docker run --rm --network host mysql:8 mysql -h {host} -P {port} -u {user} -p'{password}' {database} -e "{SQL}"`
+- PostgreSQL: `docker run --rm --network host postgres:16 psql "postgresql://{user}:{password}@{host}:{port}/{database}" -c "{SQL}"`
+
+**如果所有方式都不可用：**
+
+从代码推断（Entity 类、MyBatis XML、migration 文件），在知识库中标注"（基于代码推断，未直连数据库验证）"。
 
 **Step 1 — Parse datasource config:**
 
