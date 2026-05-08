@@ -20,10 +20,10 @@ Claude Code 插件 — 扫描项目代码库，自动生成 AI 知识库（CLAUD
 ## 安装
 
 ```bash
-# 1. 添加 marketplace
-claude plugin marketplace add github:xinxin1112/project-scan
+# 添加 marketplace
+claude plugin marketplace add xinxin1112/project-scan
 
-# 2. 安装插件
+# 安装插件
 claude plugin install project-scan
 ```
 
