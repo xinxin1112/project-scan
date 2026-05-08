@@ -37,47 +37,55 @@ async function main() {
 
   log('Starting freshness check...');
 
-  for (const source of state.sources || []) {
-    if (source.type === 'backend' || source.type === 'frontend') {
-      const sourcePath = source.path;
-      if (!fs.existsSync(sourcePath)) {
-        log(`WARN: source path not found: ${sourcePath}`);
-        continue;
-      }
+  // New format: root-level with repos + modules
+  if (state.repos && state.modules) {
+    for (const [modName, mod] of Object.entries(state.modules)) {
+      for (const source of mod.sources || []) {
+        const repo = state.repos[source.repo];
+        if (!repo) continue;
 
-      const branch = source.mainBranch || 'main';
-      run(`git -C "${sourcePath}" fetch origin ${branch} --quiet`);
-
-      if (source.type === 'backend' && source.modules) {
-        for (const mod of source.modules) {
-          const savedCommit = source.commits && source.commits[mod];
-          if (!savedCommit) continue;
-
-          const latestCommit = run(`git -C "${sourcePath}" log -1 --format=%H origin/${branch} -- ${mod}`);
-          if (latestCommit && latestCommit !== savedCommit) {
-            staleModules.push({ source, module: mod, savedCommit, latestCommit, branch });
-            log(`STALE: backend/${mod} (${savedCommit.slice(0,7)} → ${latestCommit.slice(0,7)})`);
-          }
+        const repoPath = path.resolve(absDir, repo.path);
+        if (!fs.existsSync(repoPath)) {
+          log(`WARN: repo path not found: ${repoPath}`);
+          continue;
         }
-      } else if (source.type === 'frontend') {
-        const savedCommit = source.commit;
+
+        const branch = repo.branch || 'main';
+        run(`git -C "${repoPath}" fetch origin ${branch} --quiet`);
+
+        const savedCommit = mod.commits && mod.commits[source.name];
         if (!savedCommit) continue;
 
-        const paths = (source.scannedPaths || []).join(' ');
-        const latestCommit = run(`git -C "${sourcePath}" log -1 --format=%H origin/${branch} -- ${paths}`);
+        const subpath = source.subpath || '';
+        const latestCommit = run(`git -C "${repoPath}" log -1 --format=%H origin/${branch} -- ${subpath}`);
         if (latestCommit && latestCommit !== savedCommit) {
-          staleModules.push({ source, module: 'frontend', savedCommit, latestCommit, branch });
-          log(`STALE: frontend (${savedCommit.slice(0,7)} → ${latestCommit.slice(0,7)})`);
+          staleModules.push({ modName, source, repo, repoPath, savedCommit, latestCommit, branch, subpath });
+          log(`STALE: ${modName}/${source.name} (${savedCommit.slice(0,7)} → ${latestCommit.slice(0,7)})`);
         }
       }
-    } else if (source.type === 'document') {
-      if (!fs.existsSync(source.path)) continue;
-      const stat = fs.statSync(source.path);
-      const currentMtime = stat.mtime.toISOString();
-      const currentSize = stat.size;
-      if (source.mtime !== currentMtime || source.size !== currentSize) {
-        staleModules.push({ source, module: 'document' });
-        log(`STALE: document ${path.basename(source.path)} (modified)`);
+    }
+  }
+  // Legacy format: sources[] at module level
+  else if (state.sources) {
+    for (const source of state.sources) {
+      if (source.type === 'backend' || source.type === 'frontend') {
+        const sourcePath = path.resolve(absDir, source.path || '');
+        if (!fs.existsSync(sourcePath)) {
+          log(`WARN: source path not found: ${sourcePath}`);
+          continue;
+        }
+
+        const branch = source.branch || source.mainBranch || 'main';
+        run(`git -C "${sourcePath}" fetch origin ${branch} --quiet`);
+
+        const savedCommit = source.commit || (source.commits && source.commits[source.name]);
+        if (!savedCommit) continue;
+
+        const latestCommit = run(`git -C "${sourcePath}" log -1 --format=%H origin/${branch}`);
+        if (latestCommit && latestCommit !== savedCommit) {
+          staleModules.push({ source, repoPath: sourcePath, savedCommit, latestCommit, branch, subpath: '' });
+          log(`STALE: ${source.name} (${savedCommit.slice(0,7)} → ${latestCommit.slice(0,7)})`);
+        }
       }
     }
   }
@@ -89,11 +97,12 @@ async function main() {
 
   log(`Found ${staleModules.length} stale module(s). Running incremental update...`);
 
-  // Collect changed files for each stale backend/frontend module
+  // Collect changed files for each stale module
   const changedFiles = [];
   for (const stale of staleModules) {
-    if (stale.savedCommit && stale.latestCommit) {
-      const diff = run(`git -C "${stale.source.path}" diff ${stale.savedCommit}..${stale.latestCommit} --name-only`);
+    if (stale.savedCommit && stale.latestCommit && stale.repoPath) {
+      const subpathFilter = stale.subpath ? ` -- ${stale.subpath}` : '';
+      const diff = run(`git -C "${stale.repoPath}" diff ${stale.savedCommit}..${stale.latestCommit} --name-only${subpathFilter}`);
       if (diff) {
         changedFiles.push(...diff.split('\n').filter(Boolean));
       }
@@ -104,28 +113,43 @@ async function main() {
   const changedFilePath = path.join(absDir, '.changed-files.tmp');
   fs.writeFileSync(changedFilePath, changedFiles.join('\n'));
 
-  // Update vector store if it exists
-  const vectorStorePath = path.join(absDir, '.vector-store');
-  if (fs.existsSync(vectorStorePath) && changedFiles.length > 0) {
-    log('Updating vector index...');
-    const pluginRoot = path.resolve(__dirname, '..');
-    const indexScript = path.join(pluginRoot, 'scripts', 'vector-index.js');
+  // Update vector stores for affected modules
+  const pluginRoot = path.resolve(__dirname, '..');
+  const indexScript = path.join(pluginRoot, 'scripts', 'vector-index.js');
+
+  const affectedModules = new Set(staleModules.map(s => s.modName).filter(Boolean));
+  for (const modName of affectedModules) {
+    const modVectorStore = path.join(absDir, modName, '.vector-store');
+    if (fs.existsSync(modVectorStore) && changedFiles.length > 0) {
+      log(`Updating vector index for ${modName}...`);
+      const modDir = path.join(absDir, modName);
+      const result = run(`node "${indexScript}" index "${modDir}" --incremental --changed="${changedFilePath}"`, { timeout: 300000 });
+      if (result) log(`Vector update (${modName}): ${result.split('\n').pop()}`);
+    }
+  }
+
+  // Fallback: check root-level .vector-store (legacy)
+  const rootVectorStore = path.join(absDir, '.vector-store');
+  if (fs.existsSync(rootVectorStore) && changedFiles.length > 0 && affectedModules.size === 0) {
+    log('Updating root vector index...');
     const result = run(`node "${indexScript}" index "${absDir}" --incremental --changed="${changedFilePath}"`, { timeout: 300000 });
     if (result) log(`Vector update: ${result.split('\n').pop()}`);
-    else log('Vector update: completed (or no output)');
   }
 
   // Update scan-state commits
   for (const stale of staleModules) {
-    if (stale.source.type === 'backend' && stale.latestCommit) {
-      if (!stale.source.commits) stale.source.commits = {};
-      stale.source.commits[stale.module] = stale.latestCommit;
-    } else if (stale.source.type === 'frontend' && stale.latestCommit) {
-      stale.source.commit = stale.latestCommit;
-    } else if (stale.source.type === 'document') {
-      const stat = fs.statSync(stale.source.path);
-      stale.source.mtime = stat.mtime.toISOString();
-      stale.source.size = stat.size;
+    if (stale.modName && state.modules && state.modules[stale.modName]) {
+      // New format
+      const mod = state.modules[stale.modName];
+      if (!mod.commits) mod.commits = {};
+      mod.commits[stale.source.name] = stale.latestCommit;
+    } else if (stale.source) {
+      // Legacy format
+      if (stale.source.commits) {
+        stale.source.commits[stale.source.name] = stale.latestCommit;
+      } else {
+        stale.source.commit = stale.latestCommit;
+      }
     }
   }
 

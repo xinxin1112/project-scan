@@ -41,30 +41,100 @@ fi
 
 ```
 当前目录有 .scan-state.json？
-├── 是 → 执行新鲜度检查（见下方），根据结果给出选项
-├── 否 → 当前目录有构建文件（pom.xml/build.gradle/package.json 等）？
-│         ├── 是 → 单项目扫描（现有 Phase 1-9 逻辑）
-│         └── 否 → 询问项目路径（见下方 Path Prompt）
+├── 是 → 检查 mode 字段
+│         ├── mode = "multi-source" 且有 modules → 根目录模式（见下方）
+│         └── 其他 → 执行新鲜度检查（见下方），根据结果给出选项
+├── 否 → 当前目录的子目录有 .scan-state.json？（向下找一层）
+│         ├── 是 → 提示："检测到知识库在父目录 {path}，请在该目录下执行 /project-scan"
+│         └── 否 → 当前目录有构建文件（pom.xml/build.gradle/package.json 等）？
+│                   ├── 是 → 单项目扫描（现有 Phase 1-9 逻辑）
+│                   └── 否 → 询问项目路径（见下方 Path Prompt）
 ```
+
+#### 根目录模式（多模块知识库）
+
+检测到 `.scan-state.json` 中 `mode = "multi-source"` 且有 `modules` 字段时，展示模块列表和操作菜单：
+
+```
+检测到多模块知识库（{知识库名}）
+
+模块列表：
+  {模块1} — 上次扫描：{lastScan}
+  {模块2} — 上次扫描：{lastScan}
+
+操作：
+1. 检查所有模块新鲜度
+2. 更新过期模块
+3. 添加新模块（复用已有源码）
+4. 生成/重建向量索引
+5. 配置自动更新
+6. 退出
+```
+
+STOP 等待用户回复。
+
+用户选择后：
+- 选 1（检查新鲜度）→ 对所有模块执行新鲜度检查，展示结果后再次给出操作菜单
+- 选 2（更新过期模块）→ 检查新鲜度后自动更新所有过期模块，完成后展示后续操作菜单
+- 选 3（添加新模块）→ 进入"添加新模块"流程（见下方）
+- 选 4（向量索引）→ 询问对哪个模块操作，然后进入 Phase 19
+- 选 5（配置自动更新）→ 进入 Phase 20
+- 选 6（退出）→ 结束
+
+#### 添加新模块（复用已有 code/）
+
+从 `.scan-state.json` 的 `repos` 字段获取已 clone 的仓库路径，检测可用但尚未建立知识库的模块：
+
+```bash
+# 后端：从 settings.gradle / pom.xml 解析所有模块
+# 前端：从 apps/ 或 packages/ 扫描所有应用
+# 过滤掉 modules 中已有的模块
+```
+
+```
+已有源码中检测到以下未扫描的后端模块：
+- pur-order
+- pur-supplier
+- pur-payment
+
+请选择要添加的模块（逗号分隔）：
+```
+
+STOP 等待用户回复。
+
+```
+为 {模块名} 选择关联的前端应用（逗号分隔，或跳过）：
+- order-mng
+- supplier-mng
+
+```
+
+STOP 等待用户回复。
+
+选择完成后：
+- 在 `.scan-state.json` 的 `modules` 中添加新模块配置
+- 创建模块目录和 `prd/` 子目录
+- 提示放入 PRD 后开始扫描
 
 #### 已有知识库时的新鲜度检查
 
-检测到 `.scan-state.json` 后，先自动检查所有源的新鲜度：
+检测到 `.scan-state.json` 后，遍历 `modules` 中每个模块的 `sources`，检查新鲜度：
 
 ```bash
+# 源码路径解析：repos[source.repo].path + "/" + source.subpath
+# 例如：code/pur-center/app/pur-reconcile
+
 # 对每个 backend 源
-cd {source-path}
-git fetch origin {生产分支} --quiet 2>/dev/null || true
-git log -1 --format=%H origin/{生产分支} -- {module-path}
-# 对比 .scan-state.json 中记录的 commit
+cd {repos[source.repo].path}
+git fetch origin {repos[source.repo].branch} --quiet 2>/dev/null || true
+git log -1 --format=%H origin/{branch} -- {source.subpath}
+# 对比 modules[模块].commits[source.name]
 
 # 对每个 frontend 源
-cd {source-path}
-git fetch origin {生产分支} --quiet 2>/dev/null || true
-git log -1 --format=%H origin/{生产分支} -- {scannedPaths...}
-
-# 对每个 document 源
-stat -f "%m %z" {document-path}
+cd {repos[source.repo].path}
+git fetch origin {repos[source.repo].branch} --quiet 2>/dev/null || true
+git log -1 --format=%H origin/{branch} -- {source.subpath}
+# 对比 modules[模块].commits[source.name]
 ```
 
 **如果全部最新：**
@@ -279,11 +349,47 @@ STOP 等待用户回复。用户回复"继续"后：
 │   │   │   │   └── faq.md             ← 常见问题（从 PRD + 代码推断）
 │   │   │   └── cross-reference.md
 │   │   ├── test-data/
-│   │   └── .scan-state.json
+│   │   └── .vector-store/             ← 向量索引（可选）
 │   ├── {模块名-2}/                    ← 另一个模块的知识库
 │   │   └── ...
-│   └── .scan-state.json               ← 项目级扫描状态
+│   ├── .scan-state.json               ← 统一扫描状态（根目录唯一）
+│   └── CLAUDE.md                      ← 根级索引
 ```
+
+**注意：`.scan-state.json` 只存在于知识库根目录，模块子目录不再有独立的状态文件。**
+
+#### .scan-state.json 格式（多模块）
+
+```json
+{
+  "version": "1.7.0",
+  "lastScan": "2026-05-08",
+  "mode": "multi-source",
+  "repos": {
+    "pur-center": { "path": "code/pur-center", "branch": "release_prod", "type": "backend" },
+    "srm-web": { "path": "code/srm-web", "branch": "release", "type": "frontend" }
+  },
+  "modules": {
+    "pur-reconcile": {
+      "lastScan": "2026-05-08",
+      "sources": [
+        { "type": "backend", "name": "pur-reconcile", "repo": "pur-center", "subpath": "app/pur-reconcile" },
+        { "type": "frontend", "name": "reconcile-mng", "repo": "srm-web", "subpath": "apps/reconcile-mng" }
+      ],
+      "commits": { "pur-reconcile": "abc123...", "reconcile-mng": "def456..." },
+      "phases": { "phase1-detection": { "status": "completed", "date": "2026-05-08" } }
+    }
+  },
+  "gateway": { "rule": "/api/{path} → /{path}" },
+  "database": { "type": "mysql", "host": "...", "port": 3306, "database": "...", "username": "..." }
+}
+```
+
+字段说明：
+- `repos` — 已 clone 的仓库列表（code/ 下的目录），添加新模块时复用
+- `modules` — 各模块的扫描状态，每个模块记录自己的 sources、commits、phases
+- `commits` — 各源的最新已扫描 commit hash，用于增量更新时判断是否过期
+- 源码实际路径 = `{repos[repo].path}/{subpath}`（如 `code/pur-center/app/pur-reconcile`）
 
 如果不是多模块项目（单模块），则不建子目录，知识库直接生成在知识库根目录下：
 

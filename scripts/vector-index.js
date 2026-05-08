@@ -221,11 +221,33 @@ async function indexProject(knowledgeBaseDir, options = {}) {
   fs.mkdirSync(path.join(vectorDir, 'business'), { recursive: true });
 
   // Resolve source code paths from .scan-state.json
+  // Strategy: check module-level first, then root-level (parent dir)
   const scanStatePath = path.join(knowledgeBaseDir, '.scan-state.json');
   const parentDir = path.dirname(knowledgeBaseDir);
+  const parentScanStatePath = path.join(parentDir, '.scan-state.json');
   let sourceCodePaths = [];
 
-  if (fs.existsSync(scanStatePath)) {
+  if (fs.existsSync(parentScanStatePath)) {
+    // New format: root-level .scan-state.json with repos + modules
+    const state = JSON.parse(fs.readFileSync(parentScanStatePath, 'utf-8'));
+    const moduleName = path.basename(knowledgeBaseDir);
+
+    if (state.repos && state.modules && state.modules[moduleName]) {
+      const mod = state.modules[moduleName];
+      for (const source of mod.sources || []) {
+        const repo = state.repos[source.repo];
+        if (repo) {
+          const absPath = path.resolve(parentDir, repo.path, source.subpath);
+          if (fs.existsSync(absPath)) {
+            sourceCodePaths.push({ absPath, type: source.type, name: source.name });
+          }
+        }
+      }
+    }
+  }
+
+  if (sourceCodePaths.length === 0 && fs.existsSync(scanStatePath)) {
+    // Legacy format: module-level .scan-state.json with sources[].path
     const state = JSON.parse(fs.readFileSync(scanStatePath, 'utf-8'));
     for (const source of state.sources || []) {
       if (source.path) {
