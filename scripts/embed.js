@@ -4,7 +4,7 @@ const https = require('https');
 
 async function detectProvider() {
   try {
-    const res = await fetchJSON('http://localhost:11434/api/tags', { timeout: 3000 });
+    const res = await fetchJSON('http://127.0.0.1:11434/api/tags', { timeout: 3000 });
     if (res && res.models) {
       const hasNomic = res.models.some(m => m.name && m.name.includes('nomic-embed-text'));
       if (hasNomic) return { provider: 'ollama', model: 'nomic-embed-text', dimensions: 768 };
@@ -28,7 +28,7 @@ async function pullModel(model) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify({ name: model });
     const req = http.request({
-      hostname: 'localhost', port: 11434, path: '/api/pull',
+      hostname: '127.0.0.1', port: 11434, path: '/api/pull',
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       timeout: 300000
     }, (res) => {
@@ -56,7 +56,7 @@ async function embedOllama(texts, model) {
     const data = JSON.stringify({ model, prompt: text });
     const res = await new Promise((resolve, reject) => {
       const req = http.request({
-        hostname: 'localhost', port: 11434, path: '/api/embeddings',
+        hostname: '127.0.0.1', port: 11434, path: '/api/embeddings',
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         timeout: 30000
       }, (res) => {
