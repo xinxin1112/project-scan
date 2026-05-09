@@ -275,6 +275,24 @@ async function indexProject(knowledgeBaseDir, options = {}) {
   const prdDir = path.join(knowledgeBaseDir, 'prd');
   const businessDir = path.join(aiDir, 'business');
 
+  // Resolve additional PRD paths from .scan-state.json
+  let externalPrdPaths = [];
+  const prdScanState = fs.existsSync(parentScanStatePath) ? parentScanStatePath : scanStatePath;
+  if (fs.existsSync(prdScanState)) {
+    const state = JSON.parse(fs.readFileSync(prdScanState, 'utf-8'));
+    const moduleName = path.basename(knowledgeBaseDir);
+    const mod = state.modules && state.modules[moduleName];
+    if (mod && mod.prd) {
+      const baseDir = path.dirname(prdScanState);
+      for (const prdEntry of mod.prd) {
+        const absPath = path.resolve(baseDir, prdEntry.path);
+        if (fs.existsSync(absPath)) {
+          externalPrdPaths.push(absPath);
+        }
+      }
+    }
+  }
+
   // Collect source code files from resolved paths
   let codeFiles = [];
   for (const src of sourceCodePaths) {
@@ -303,6 +321,17 @@ async function indexProject(knowledgeBaseDir, options = {}) {
   if (fs.existsSync(prdDir)) {
     const files = collectFiles(prdDir, DOC_EXTENSIONS, knowledgeBaseDir);
     businessFiles.push(...files.map(f => ({ relative: f, absBase: knowledgeBaseDir, module: module || '' })));
+  }
+  // Collect from external PRD paths (resolved from .scan-state.json)
+  for (const extPath of externalPrdPaths) {
+    const stat = fs.statSync(extPath);
+    if (stat.isDirectory()) {
+      const files = collectFiles(extPath, DOC_EXTENSIONS, extPath);
+      businessFiles.push(...files.map(f => ({ relative: f, absBase: extPath, module: module || '' })));
+    } else if (stat.isFile() && DOC_EXTENSIONS.has(path.extname(extPath))) {
+      const rel = path.basename(extPath);
+      businessFiles.push({ relative: rel, absBase: path.dirname(extPath), module: module || '' });
+    }
   }
   // Include business-flows.md from ai/backend/ if ai/business/ doesn't exist
   if (!fs.existsSync(businessDir)) {

@@ -135,6 +135,11 @@ cd {repos[source.repo].path}
 git fetch origin {repos[source.repo].branch} --quiet 2>/dev/null || true
 git log -1 --format=%H origin/{branch} -- {source.subpath}
 # 对比 modules[模块].commits[source.name]
+
+# 对每个 PRD 源（modules[模块].prd[]）
+# type=file: stat -f "%m %z" {path}
+# type=directory: find {path} -type f \( -name "*.md" -o -name "*.pdf" -o -name "*.docx" \) -newer {module}/ai/business/glossary.md
+# 有新文件或修改文件 → 标记为过期
 ```
 
 **如果全部最新：**
@@ -308,7 +313,11 @@ STOP 等待用户回复。
 源代码已就绪。请将 PRD 文档放入对应模块的 prd/ 目录：
   {当前目录}/{知识库名}/{模块名}/prd/
 
+支持格式：.md / .pdf / .docx / .png / .jpg
+也可直接指定外部文档路径（文件或目录均可）。
+
 放好后回复"继续"开始扫描，或直接回复"继续"跳过 PRD。
+如需指定外部路径，直接输入路径即可。
 ```
 
 STOP 等待用户回复。用户回复"继续"后：
@@ -505,8 +514,21 @@ For each source type, collect path → detect main branch → select modules/dir
 
 **PRD/文档收集：**
 ```
-文档路径（支持 PDF/Word/Markdown/图片）：> /path/to/ehr-prd.pdf
+文档路径（支持 PDF/Word/Markdown/图片，可指定文件或目录）：> /path/to/docs/prd/
+
+检测到目录，包含以下文档：
+  1. sku-price-management.md
+  2. sku-management.md
+  3. README.md (跳过)
+
+将扫描 2 个文档。确认？(y/n)
 ```
+
+路径规则：
+- 指向文件 → 直接处理该文件
+- 指向目录 → 扫描目录下所有支持格式的文件（`.md`、`.pdf`、`.docx`、`.png`、`.jpg`）
+- 自动跳过 `README.md`、`CHANGELOG.md` 等非 PRD 文件
+- 支持多次添加（输入多个路径，逗号分隔或多次选择"3. PRD/设计文档"）
 
 **数据库收集：**
 ```
@@ -540,7 +562,7 @@ When both frontend and backend sources exist:
 扫描计划：
 ├── 后端: /path/to/ehr-core [user-service, order-service] (branch: main)
 ├── 前端: /path/to/ehr-web [src/views/user/, src/views/order/, src/components/] (branch: main)
-├── PRD: /path/to/ehr-prd.pdf
+├── PRD: /path/to/docs/prd/ (2 个文档)
 ├── 数据库: 从后端配置检测
 ├── 网关规则: /api/{module}/** → {module-service}/**
 └── 输出: /path/to/ehr-knowledge-base/
@@ -1270,6 +1292,17 @@ Output merged into `ai/frontend-routes.md` Config section header.
 
 ### Phase 16: PRD/Document Extraction (Multi-Source Only)
 
+**文档来源：**
+
+1. 模块 `prd/` 目录下的文件
+2. 用户在 Phase 0 指定的外部文档路径（文件或目录）
+3. 源码仓库中的 `docs/prd/` 目录（如存在，自动检测）
+
+**目录扫描规则：**
+```bash
+find {prd-path} -type f \( -name "*.md" -o -name "*.pdf" -o -name "*.docx" -o -name "*.png" -o -name "*.jpg" \) | grep -v -E "(README|CHANGELOG|node_modules)"
+```
+
 **文件格式处理：**
 
 | 格式 | 处理方式 |
@@ -1296,7 +1329,10 @@ textutil -convert pdf "{prd-dir}/文件名.docx"
 
 **Freshness tracking** (PRD not in git, use mtime + file size):
 ```bash
+# 单文件
 stat -f "%m %z" {prd-path}  # macOS: mtime + size
+# 目录：对每个文件分别 stat，任一文件变化即视为过期
+find {prd-dir} -type f \( -name "*.md" -o -name "*.pdf" -o -name "*.docx" \) -exec stat -f "%N %m %z" {} \;
 ```
 
 **Extract content and distribute to:**
@@ -1519,6 +1555,10 @@ Write scan state to `{knowledge-base-root}/.scan-state.json`:
       "sources": [
         { "type": "backend", "name": "source-name", "repo": "repo-name", "subpath": "app/module" }
       ],
+      "prd": [
+        { "path": "module-name/prd/", "type": "directory" },
+        { "path": "code/repo-name/docs/prd/feature.md", "type": "file" }
+      ],
       "commits": { "source-name": "abc123def" },
       "phases": { "phase1-detection": { "status": "completed", "date": "2026-05-08" } }
     }
@@ -1527,6 +1567,11 @@ Write scan state to `{knowledge-base-root}/.scan-state.json`:
   "database": { "type": "mysql", "host": "...", "port": 3306, "database": "...", "username": "..." }
 }
 ```
+
+`prd` 字段说明：
+- `path`：相对于知识库根目录的路径
+- `type`：`"file"` 或 `"directory"`
+- 目录类型会扫描其下所有支持格式的文件
 
 Module-level `.scan-state.json` files are NOT created — all state lives at the root.
 
@@ -1605,7 +1650,7 @@ Read `.scan-state.json`, display current sources:
 当前知识库包含以下源：
 1. [后端] /path/to/ehr-core → user-service, order-service (branch: main)
 2. [前端] /path/to/ehr-web → src/views/user/, src/views/order/ (branch: main)
-3. [文档] /path/to/ehr-prd.pdf
+3. [文档] /path/to/docs/prd/ (3 个文档)
 
 操作：
 1. 追加新源
@@ -1667,7 +1712,10 @@ git log -1 --format=%H origin/{main-branch} -- {scannedPaths...}
 
 Document (mtime + size):
 ```bash
+# 单文件
 stat -f "%m %z" {document-path}
+# 目录：检查是否有比上次扫描更新的文件
+find {document-dir} -type f \( -name "*.md" -o -name "*.pdf" -o -name "*.docx" \) -newer {module-ai-dir}/business/glossary.md
 ```
 
 **Step 3 — Report & User Choice:**
