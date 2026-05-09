@@ -1108,6 +1108,19 @@ Compare code entities with actual database tables:
   - Confirmed relationships → solid line (`||--o{`)
   - Suspected relationships → dashed line (use `..` notation)
   - Include table name, key columns, and relationship labels
+  - **每张表必须包含**：表中文注释（`table_name["注释"]`）、所有字段的类型和注释
+  - 字段格式：`{type} {field_name} {constraint} "{comment}"`
+  - constraint 可选值：PK / FK / UK，无约束则省略
+  - 示例：
+    ```
+    order_main["订单主表"] {
+        bigint id PK
+        varchar order_code UK "订单编号"
+        varchar status "状态"
+        bigint user_id FK "用户ID"
+        datetime ctime "创建时间"
+    }
+    ```
 
 **ER diagram grouping strategy:**
 - Tables ≤ 15: generate one complete ER diagram
@@ -1603,7 +1616,7 @@ After all phases complete, generate output files using templates.
 - `{output-dir}/ai/` → split AI context files:
   - `backend-api.md` — 后端 API 端点 + 请求/响应类型
   - `backend-architecture.md` — 后端分层、模块依赖、技术栈、配置
-  - `database-schema.md` — 表结构、ER 关系
+  - `database-schema.md` — 表结构、ER 关系（含表注释、字段类型、字段注释）
   - `database-enums.md` — 枚举/状态值含义
   - `frontend-routes.md` — 路由 + 页面组件 + 业务说明 + 构建配置
   - `frontend-api-calls.md` — 前端 API 调用层
