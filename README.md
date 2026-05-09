@@ -12,6 +12,7 @@ Claude Code 插件 — 扫描项目代码库，自动生成 AI 知识库（CLAUD
 
 - **单项目扫描** — Java/Spring、Node.js、Go、Python、Rust 项目的完整扫描
 - **多源扫描** — 同时扫描前端（Vue/React）+ 后端 + PRD 文档 + 数据库，生成统一知识库
+- **PRD 文档支持** — 支持 .md / .pdf / .docx / 图片格式，可指定文件或目录批量导入
 - **数据库直连** — 自动解析表结构、推断关系、采样测试数据
 - **业务知识提取** — 生成术语表、业务规则、流程图、数据字典（业务+开发共用）
 - **向量索引 + 语义检索** — 代码切片 + embedding 入库，内置语义检索命令
@@ -131,6 +132,10 @@ workspace/
 
 源代码已就绪。请将 PRD 文档放入：
   ./pur-center/pur-reconcile/prd/
+
+支持格式：.md / .pdf / .docx / .png / .jpg
+也可直接输入外部文档路径（文件或目录均可）。
+
 放好后回复"继续"开始扫描。
 
 > 继续
@@ -213,9 +218,9 @@ workspace/
 ```
 
 索引范围包括：
-- 知识库文档（`ai/backend/`、`ai/frontend/`）
+- 知识库文档（`ai/backend/`、`ai/frontend/`、`ai/business/`）
 - 源码文件（从 `.scan-state.json` 中声明的源码路径自动解析）
-- PRD 文档（`prd/` 目录）
+- PRD 文档（`prd/` 目录 + `.scan-state.json` 中声明的外部 PRD 路径）
 
 ## 定时自动更新（可选）
 
