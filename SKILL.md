@@ -254,56 +254,82 @@ export EMBEDDING_BASE_URL=https://your-api.example.com/v1
 export EMBEDDING_MODEL=text-embedding-3-small
 ```
 
-## v2 层次 2 flow 引导（向量库构建完成后）
+## v2 层次 2 引导（向量库构建完成后）
 
-向量库构建完成后，询问用户是否对核心方法生成层次 2 flow 文档：
+向量库构建完成后，询问用户是否对核心方法/组件生成层次 2 文档：
 
 ```
 向量库构建完成。
 
-是否对核心业务方法生成「层次 2 flow」文档？
+是否对核心业务方法和表单组件生成「层次 2」文档？
 
 层次 2 是什么：
-  - 层次 1（已生成）：调用链 + 事务注解标注，机械提取，适合简单查询/列表接口
-  - 层次 2（可选）：条件分支 + 异常码 + 事务边界 + 决策点表，需要 AI 分析 Service 方法体
-  - 适用于核心操作（提交/确认/取消/撤回等），帮助排查"为什么这个操作报错"
+  - 层次 1（已生成）：机械提取的调用链/字段列表，适合简单接口和页面
+  - 层次 2（可选）：AI 读源码后输出完整的业务逻辑文档，适合核心复杂逻辑
 
-示例（层次 2 confirm.md 片段）：
-  ## 条件分支流程
+后端层次 2（条件分支 + 异常码 + 事务边界）：
+  示例（confirm.md 片段）：
   | 步骤 | 条件 | 走向 | 异常码 |
   | 1 | reconcileStatus != SUPPLIER_CONFIRMED | 抛异常 | RECONCILE_USAGE_STATUS_NOT_ALLOWED |
   | 2 | isFlowRequest = true | 走审批流程 | — |
-  | 3 | isFlowRequest = false | 直接确认 | — |
+
+前端层次 2（完整字段联动 + 值传递 + 级联清空 + 动态计算）：
+  示例（field-linkage-detail.md 片段）：
+  | 触发 | 效果 | 条件 |
+  | 修改采购类别 | 弹确认框 → 清空明细行旧类别字段 | 已有明细行 |
+  | 修改账单月份 | 调接口获取汇率 → 重算每行人民币金额 | 有非 CNY 币种 |
 
 选择：
-  1. 是，对核心方法生成层次 2（需要当前 AI 会话分析代码，约 2-5 分钟/方法）
-  2. 否，后续手动执行（/project-scan update --auto-lm）
+  1. 是，对核心方法和组件生成层次 2（约 2-5 分钟/个）
+  2. 只做后端层次 2
+  3. 只做前端层次 2
+  4. 否，后续手动执行
 ```
 
 STOP 等待用户回复。
 
-用户选 1 →
-  从 scan-config.yaml 的 `flow_level2.core_methods` 读取核心方法列表。
-  如果没有配置，自动检测：从已生成的 flow 文档中找调用链最长 + 有状态转移的 top-5 方法。
+### 后端层次 2 执行
 
-  对每个核心方法：
-  1. 读取 Controller + Service 源码
-  2. 用 `flow-level2-builder.js` 构建分析 prompt
-  3. 当前 AI 会话直接分析代码，输出结构化的层次 2 文档
-  4. 写入 `kb/<module>/flows/<method>.md`（覆盖层次 1 版本）
+从 scan-config.yaml 的 `flow_level2.core_methods` 读取核心方法列表。
+如果没有配置，自动检测：从已生成的 flow 文档中找调用链最长 + 有状态转移的 top-5 方法。
 
-  全部完成后，自动重建向量库（层次 2 文档已变更，向量库需要同步）：
-  ```bash
-  node scripts/kb-vector-index.js <kb-dir> <vector-store-dir>
-  ```
-  输出："✓ 层次 2 flow 生成完成（X 份），向量库已同步更新"
+对每个核心方法：
+1. 读取 Controller + Service 源码
+2. 用 `flow-level2-builder.js` 构建分析 prompt
+3. 当前 AI 会话直接分析代码，输出结构化的层次 2 文档
+4. 写入 `kb/<module>/flows/<method>.md`（覆盖层次 1 版本）
 
-用户选 2 → 跳过，扫描结束。提示：
-  ```
-  好的。后续需要时执行：
-    /project-scan update --auto-lm    ← 自动对所有核心方法生成层次 2
-    或在对话中说"帮我分析 confirm 方法的条件分支" ← 单个方法手动生成
-  ```
+### 前端层次 2 执行
+
+自动检测核心表单组件：从前端 app 的 `pages/` 目录中找文件最大 + 含 `Form`/`Editor`/`FooterContent` 的 top-3 组件。
+
+对每个核心组件：
+1. 读取组件完整源码（含关联的 hooks/constants）
+2. AI 分析输出结构化文档，包含：
+   - **值传递**：A 字段变化 → B 字段怎么变（触发/效果/条件）
+   - **条件展示**：什么角色/状态/类型下哪些字段可见
+   - **条件禁用**：什么模式下哪些字段不能编辑
+   - **动态必填**：后端返回控制哪些字段必填
+   - **级联清空**：改了什么会清空什么（含确认提示文案）
+   - **动态计算**：公式 + 触发时机
+   - **按钮权限**：什么节点/模式下显示什么按钮
+3. 写入 `kb/<app>/field-linkage-detail.md` 和 `kb/<app>/node-button-field-matrix.md`（覆盖脚本生成的简化版）
+
+### 完成后
+
+全部完成后，自动重建向量库（层次 2 文档已变更，向量库需要同步）：
+```bash
+node scripts/kb-vector-index.js <kb-dir> <vector-store-dir>
+```
+输出："✓ 层次 2 生成完成（后端 X 份 + 前端 Y 份），向量库已同步更新"
+
+用户选 4 → 跳过，扫描结束。提示：
+```
+好的。后续需要时执行：
+  /project-scan update --auto-lm    ← 自动对所有核心方法/组件生成层次 2
+  或在对话中说"帮我分析 confirm 方法的条件分支" ← 单个方法手动生成
+  或在对话中说"帮我分析 DetailForm 的字段联动" ← 单个组件手动生成
+```
 
 ---
 
