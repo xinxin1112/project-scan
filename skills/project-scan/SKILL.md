@@ -40,12 +40,44 @@ node scripts/scan-all.js /Users/a6667/bilibili/project-scan/scan-config.yaml
 内部流程：
 1. 读 `scan-config.yaml`
 2. 对每个 project 按 type 分发：
-   - `java-spring` → entity + enum + state-machine + contract + flow + method-index + error-codes + rules
-   - `java-spring` + `role: gateway` → 只提取 Retrofit 转发映射
-   - `react` → routes + api-client + api-types + pages + stores + hermes-dict + frontend-enums + field-linkage + node-button-matrix
-3. 跨项目：保留已有的 system-topology.md + frontend-backend-map.md（不覆盖）
-4. 每个项目建向量库（bge-m3）
-5. 生成 INDEX.md + CLAUDE.md
+
+### Java/Spring 后端（type: java-spring）
+对每个 module 生成：
+- `domain/entities/` — 从 Entity.java + DDL（连 MySQL）生成字段表（含类型/长度/非空/默认值/索引）
+- `domain/enums/` — 从 @HermesLocalDict 枚举生成 code + 描述表
+- `domain/state-machines/` — 从 setStatus/updateStatus 调用提取状态转移 + Mermaid 图
+- `domain/rules/` — 定位含决策逻辑的方法（if-else 密度 ≥ 2）
+- `domain/error-codes.md` — 从异常码枚举 + Asserts.check 调用提取码值 + 抛出位置 + 触发条件
+- `contracts/internal/` — 从 Controller 的 @RequestMapping 提取端点列表
+- `contracts/external/` — 从 Callback/Webhook Controller 提取
+- `flows/` — 调用链（深度 2，接口→实现类映射）+ 事务/异步注解标注
+- `code/method-index.md` — 全部 public 方法（精确行号 + 注解列）
+- `shared/domain/enums/` — pur-common 共享枚举（不归属单一模块）
+
+### Java/Spring 网关（type: java-spring, role: gateway）
+只生成：
+- `api-mapping.md` — 从 Retrofit @GET/@POST 注解提取转发路径表 + 鉴权说明
+
+### React 前端（type: react）
+对每个 app 生成：
+- `routes.md` — 路由表（从 router/ 目录提取 path）
+- `api-client.md` — API 函数列表（从 generated/*.ts 提取 export const）
+- `api-types.md` — 接口 Req/Res 类型定义（从 *.types.ts 提取 namespace + interface）
+- `page-index.md` — 页面 + 共享组件索引
+- `stores.md` — Zustand store 的 state + action
+- `hermes-dict.md` — 全部 hermesDict 字典常量（code + 中文标签，按业务域分组）
+- `frontend-enums.md` — 前端状态聚合映射（6 态 → 后端枚举，含 getDisplayStatus 函数）
+- `field-linkage-rules.md` — 字段联动规则（隐藏/禁用/动态必填，从 useMemo + hiddenFields + disabledFields + requiredFieldMap 提取）
+- `node-button-field-matrix.md` — 节点×按钮×字段权限矩阵（从 useOperator + AuthOperate + permissionOperate 提取）
+- `backend-mapping.md` — 前后端函数级映射（前端 API 函数 → 后端 flow 文档链接）
+
+### 跨项目
+- `system-topology.md` — 从 scan-config.yaml 的 relations 自动生成调用拓扑图
+- `frontend-backend-map.md` — 从 relations 生成前后端路由总表
+- 每个前端 app 的 `backend-mapping.md` — 自动匹配前端函数名 → 后端 flow 文件
+
+### 向量库
+每个项目独立建 `.vector-store/`（lancedb + bge-m3），支持跨项目统一搜索。
 
 ## v2 增量更新流程（`/project-scan update`）
 
