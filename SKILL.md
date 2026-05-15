@@ -254,6 +254,51 @@ export EMBEDDING_BASE_URL=https://your-api.example.com/v1
 export EMBEDDING_MODEL=text-embedding-3-small
 ```
 
+## v2 层次 2 flow 引导（向量库构建完成后）
+
+向量库构建完成后，询问用户是否对核心方法生成层次 2 flow 文档：
+
+```
+向量库构建完成。
+
+是否对核心业务方法生成「层次 2 flow」文档？
+
+层次 2 是什么：
+  - 层次 1（已生成）：调用链 + 事务注解标注，机械提取，适合简单查询/列表接口
+  - 层次 2（可选）：条件分支 + 异常码 + 事务边界 + 决策点表，需要 AI 分析 Service 方法体
+  - 适用于核心操作（提交/确认/取消/撤回等），帮助排查"为什么这个操作报错"
+
+示例（层次 2 confirm.md 片段）：
+  ## 条件分支流程
+  | 步骤 | 条件 | 走向 | 异常码 |
+  | 1 | reconcileStatus != SUPPLIER_CONFIRMED | 抛异常 | RECONCILE_USAGE_STATUS_NOT_ALLOWED |
+  | 2 | isFlowRequest = true | 走审批流程 | — |
+  | 3 | isFlowRequest = false | 直接确认 | — |
+
+选择：
+  1. 是，对核心方法生成层次 2（需要当前 AI 会话分析代码，约 2-5 分钟/方法）
+  2. 否，后续手动执行（/project-scan update --auto-lm）
+```
+
+STOP 等待用户回复。
+
+用户选 1 →
+  从 scan-config.yaml 的 `flow_level2.core_methods` 读取核心方法列表。
+  如果没有配置，自动检测：从已生成的 flow 文档中找调用链最长 + 有状态转移的 top-5 方法。
+
+  对每个核心方法：
+  1. 读取 Controller + Service 源码
+  2. 用 `flow-level2-builder.js` 构建分析 prompt
+  3. 当前 AI 会话直接分析代码，输出结构化的层次 2 文档
+  4. 写入 `kb/<module>/flows/<method>.md`（覆盖层次 1 版本）
+
+用户选 2 → 跳过，扫描结束。提示：
+  ```
+  好的。后续需要时执行：
+    /project-scan update --auto-lm    ← 自动对所有核心方法生成层次 2
+    或在对话中说"帮我分析 confirm 方法的条件分支" ← 单个方法手动生成
+  ```
+
 ---
 
 ```bash
