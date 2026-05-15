@@ -3,7 +3,7 @@ name: project-scan
 description: Use when scanning a project codebase to generate knowledge base, when needing to understand a legacy project quickly, when the user says "scan project", "generate docs", "project knowledge", wants CLAUDE.md generated from code, or when searching code by semantic meaning ("search code", "find implementation", "locate logic", "vector search")
 ---
 
-# Project Scan v2
+# Project Scan v2.1
 
 扫描项目代码库，生成结构化知识库（KB）+ 向量索引。支持多项目、前后端一体化、跨系统串联。
 

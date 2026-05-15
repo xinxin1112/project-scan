@@ -1,4 +1,4 @@
-# project-scan v2.0
+# project-scan v2.1
 
 Claude Code skill — 扫描项目代码库，生成结构化知识库 + 向量索引。支持多项目、前后端一体化、跨系统串联。
 
@@ -172,6 +172,17 @@ ollama pull bge-m3
 - `docs/v2-implementation-plan.md` — 实施计划
 
 ## Changelog
+
+### v2.1.0 (2026-05-15)
+
+**Fixes:**
+- SKILL.md 移到根目录，修复 `/project-scan` 命令无法注册的问题
+- 向量库构建加入交互式引导（检测 Ollama + bge-m3，用户可选跳过）
+
+**Docs:**
+- CONTEXT.md 同步实际实现（KB 位置、多项目、跨项目串联、层次 2 flow、CLAUDE.md 补丁废弃）
+- ADR 0005 更新：React 前端有专属文档类型集（不是降级模式）
+- README 加安装/更新命令
 
 ### v2.0.0 (2026-05-15)
 
