@@ -1,243 +1,168 @@
-# project-scan
+# project-scan v2.0
 
-Claude Code 插件 — 扫描项目代码库，自动生成 AI 知识库（CLAUDE.md）和人类可读文档。
+Claude Code skill — 扫描项目代码库，生成结构化知识库 + 向量索引。支持多项目、前后端一体化、跨系统串联。
 
-让 AI 在 30 秒内理解你的整个项目。
+## v1 → v2 迁移
 
-## 为什么需要它
+首次运行 v2 时，旧 `ai/` 目录自动备份到 `ai.v1-backup-<timestamp>/`。确认 v2 输出正确后可手动删除备份。
 
-当你把一个已有项目交给 Claude Code 时，它需要花大量时间阅读代码才能理解上下文。project-scan 通过一次扫描，生成结构化的知识库文件，让 AI 后续对话中直接拥有完整的项目认知：架构、API、数据模型、业务流程，全部就位。
+## 核心能力
 
-## 功能
+### 后端（Java/Spring 完整四层）
+- **Domain** — Entity（含 DDL 类型/长度/索引）、Enum、状态机（Mermaid 图）、业务规则候选、异常码索引
+- **Contracts** — Controller 端点（HTTP/路径/参数/返回类型）、外部回调接口
+- **Flows** — 调用链（深度 2）+ 事务标注 + 条件分支（层次 2，LM 辅助）
+- **Code** — 方法索引（精确行号 + 注解列）
 
-- **单项目扫描** — Java/Spring、Node.js、Go、Python、Rust 项目的完整扫描
-- **多源扫描** — 同时扫描前端（Vue/React）+ 后端 + PRD 文档 + 数据库，生成统一知识库
-- **PRD 文档支持** — 支持 .md / .pdf / .docx / 图片格式，可指定文件或目录批量导入
-- **数据库直连** — 自动解析表结构、推断关系、采样测试数据
-- **业务知识提取** — 生成术语表、业务规则、流程图、数据字典（业务+开发共用）
-- **向量索引 + 语义检索** — 代码切片 + embedding 入库，内置语义检索命令
-- **Mermaid 图表** — 自动生成 ER 图、时序图、状态图、业务流程图
-- **增量更新** — 基于 git diff 只更新变更部分，保持知识库常新
-- **自动保鲜** — AI 读取知识库时自动检测过期模块，提示更新
-- **定时自动更新** — 配置每日定时任务，自动检查生产分支变更并增量更新（macOS + Windows）
+### 前端（React）
+- 路由表、API 客户端、页面/组件索引、Zustand Store
+- hermesDict 字典常量（301 个，含全部 code + 中文标签）
+- 前端状态聚合映射（6 态 → 后端枚举）
+- 字段联动逻辑（值传递/条件展示/级联清空/动态计算）
+- 节点 × 按钮 × 字段权限矩阵
 
-## 安装
+### 跨项目
+- 系统拓扑图（前端 → 网关 → 后端 → 外部系统）
+- 前后端接口映射（前端函数 → 后端 flow 链接）
+- 前后端字段一致性校验
+- 表单校验 vs 数据库约束比对
+- 网关转发映射（Retrofit → pur-center）
+
+### 向量搜索
+- 模型：bge-m3（多语言，中文一等公民，1024 维，8192 上下文）
+- 跨项目统一搜索（一次查询命中前端 + 网关 + 后端）
+- 中文 token 估算优化
+
+### 增量更新
+- sources 反向索引（git diff → 精确定位过期文档）
+- 人工编辑保护（body hash 检测 + human_edited 标记）
+- 层次 1/2 分流（纯脚本 vs 需要 LM）
+- 12h 新鲜度检查 + feature 分支保护
+
+## 命令
+
+| 命令 | 说明 |
+|------|------|
+| `/project-scan` | 全量扫描所有项目 |
+| `/project-scan update` | 增量更新（只重生成过期文档） |
+| `/project-scan update --force` | 强制重生成（含 human_edited 文档） |
+| `/project-scan update --auto-lm` | 增量 + 自动 LM 重生成层次 2 flow |
+| `/project-scan search <query>` | 跨项目语义搜索 |
+| `/project-scan search <query> --project=X` | 只搜指定项目 |
+| `/project-scan check` | 新鲜度检查 |
+| `/project-scan verify` | 覆盖率校验 |
+
+## 技术栈支持
+
+| 技术栈 | 支持程度 |
+|--------|---------|
+| Java/Spring Boot + MyBatis-Plus | 完整四层 |
+| React + Zustand | 路由/API/Store/字典/联动/权限矩阵 |
+| Java 网关（Retrofit 转发） | 转发映射 |
+| Vue/Go/Python/Rust | method-index 索引（四层支持在 v2.x 路线图） |
+
+## 配置
+
+首次使用需要 `scan-config.yaml`：
+
+```yaml
+output_dir: /path/to/knowledge-base
+embedding:
+  model: bge-m3
+projects:
+  - name: my-backend
+    type: java-spring
+    source: /path/to/source
+    branch: main
+    modules: [...]
+  - name: my-frontend
+    type: react
+    source: /path/to/source
+    apps: [...]
+```
+
+## 依赖
+
+- Node.js 18+
+- Ollama（本地运行 bge-m3 模型）
+- MySQL（可选，用于获取 DDL）
+- lancedb（向量存储）
 
 ```bash
-# 添加 marketplace
-claude plugin marketplace add xinxin1112/project-scan
+# 安装 embedding 模型
+ollama pull bge-m3
 
-# 安装插件
-claude plugin install project-scan
-```
-
-## 更新
-
-```bash
-cd ~/.claude/plugins/marketplaces/project-scan-marketplace && git pull origin main
-claude plugin install project-scan
-```
-
-## 使用
-
-在 Claude Code 中输入：
-
-```
-/project-scan              # 自动检测模式（推荐）
-/project-scan multi        # 强制多源扫描
-/project-scan update       # 增量更新（基于 git diff）
-/project-scan check        # 检查知识库新鲜度
-/project-scan add-source   # 追加新数据源
-/project-scan vector       # 生成向量索引
-/project-scan reindex      # 全量重建向量索引
-/project-scan search <query>  # 语义检索代码和文档
-/project-scan auto-update     # 配置定时自动更新
-/project-scan auto-update off # 关闭定时自动更新
-/project-scan auto-update status # 查看自动更新状态
+# 安装 Node 依赖
+cd ~/.claude/skills/project-scan && npm install
 ```
 
 ## 输出结构
 
-### 单项目模式
-
 ```
-project-root/
-├── CLAUDE.md                          ← AI 入口索引
-└── docs/knowledge-base/
-    ├── project-knowledge.md           ← 完整文档（架构、API、ER图、流程图）
-    └── test-data/                     ← 采样的业务数据
-```
-
-### 多源模式（多模块项目）
-
-知识库以后端仓库名命名，源码放在 `code/` 下，按模块分目录生成知识库：
-
-```
-workspace/
-├── pur-center/                        ← 知识库根目录（后端仓库名）
-│   ├── code/                          ← 源码目录
-│   │   ├── pur-center/                ← 后端代码
-│   │   └── srm-web/                   ← 前端代码
-│   ├── pur-reconcile/                 ← 模块 A 的知识库
-│   │   ├── prd/                       ← 该模块的 PRD
-│   │   ├── CLAUDE.md
-│   │   ├── project-knowledge.md
-│   │   ├── ai/
-│   │   │   ├── backend/
-│   │   │   ├── frontend/
-│   │   │   └── cross-reference.md
-│   │   ├── test-data/
-│   │   └── .vector-store/             ← 向量索引
-│   ├── pur-order/                     ← 模块 B 的知识库
-│   │   └── ...
-│   ├── .scan-state.json               ← 统一状态（repos + modules）
-│   └── CLAUDE.md                      ← 根级模块索引
+/path/to/knowledge-base/
+├── scan-config.yaml
+├── system-topology.md          ← 跨项目拓扑
+├── frontend-backend-map.md     ← 前后端映射
+├── <backend-project>/
+│   ├── kb/
+│   │   ├── INDEX.md
+│   │   ├── <module>/
+│   │   │   ├── CLAUDE.md       ← 模块入口
+│   │   │   ├── domain/{entities,enums,state-machines,rules,error-codes}
+│   │   │   ├── contracts/{internal,external}
+│   │   │   ├── flows/
+│   │   │   └── code/method-index.md
+│   │   ├── shared/domain/enums/
+│   │   └── external-systems/
+│   └── .vector-store/
+├── <frontend-project>/
+│   ├── kb/<app>/{routes,api-client,stores,hermes-dict,...}
+│   └── .vector-store/
+└── <gateway-project>/
+    ├── kb/api-mapping.md
+    └── .vector-store/
 ```
 
-扫描完成后，插件会自动在源码仓库的 CLAUDE.md 中添加 External Knowledge Base 指针，让 AI 从源码目录自动发现知识库和向量索引。
+## 补充能力：向量搜索
 
-## 典型使用流程
+```bash
+# 跨项目搜索
+/project-scan search "确认对账单报错"
 
-```
-> /project-scan
+# 只搜后端
+/project-scan search "状态转移" --project=pur-center
 
-请提供项目源：
-1. 后端项目地址/路径：
-
-> git@github.com:xxx/pur-center.git
-
-2. 后端主分支名称（如 main/master/develop/release_prd）：
-
-> release_prd
-
-3. 前端项目地址/路径（没有可跳过）：
-
-> git@github.com:xxx/srm-web.git
-
-4. 前端主分支名称（如 main/master/develop/release_prd）：
-
-> release_prd
-
-正在 clone 源码（release_prd 分支）...
-
-检测到多模块项目，包含以下模块：
-- pur-order
-- pur-reconcile
-- pur-supplier
-- ...
-
-请选择要扫描的模块（逗号分隔，或输入 all）：
-
-> pur-reconcile
-
-源代码已就绪。请将 PRD 文档放入：
-  ./pur-center/pur-reconcile/prd/
-
-支持格式：.md / .pdf / .docx / .png / .jpg
-也可直接输入外部文档路径（文件或目录均可）。
-
-放好后回复"继续"开始扫描。
-
-> 继续
-
-扫描中...
+# 只搜前端
+/project-scan search "下拉选项" --project=srm-web
 ```
 
-## 自动检测逻辑
+## 设计文档
 
-运行 `/project-scan` 时，插件会自动判断模式：
+- `CONTEXT.md` — 锁定的设计决策
+- `docs/adr/` — 架构决策记录（5 份）
+- `docs/session-notes.md` — 设计 grill 会话记录
+- `docs/v2-implementation-plan.md` — 实施计划
 
-```
-当前目录有 .scan-state.json？
-├── 是 → 多源模式（提示：update / add-source / 重新扫描）
-├── 否 → 当前目录有构建文件（pom.xml / build.gradle / package.json）？
-│         ├── 是 → 单项目扫描
-│         └── 否 → 询问 git 地址或项目路径
-```
+## Changelog
 
-支持直接提供 git 仓库地址，插件会自动 clone 并扫描。
+### v2.0.0 (2026-05-15)
 
-## 支持的技术栈
+**Breaking Changes:**
+- 输出从 `ai/` 改为 `kb/`，按四层组织（domain / contracts / flows / code）
+- 完整四层支持范围收窄到 Java/Spring；其他语言只生成 method-index
+- 知识库物理位置从项目仓库内移到独立目录
 
-| 后端 | 前端 | 数据库 |
-|------|------|--------|
-| Java / Spring Boot | Vue 2/3 | MySQL |
-| Gradle / Maven | React / Next.js | PostgreSQL |
-| MyBatis / JPA | Pinia / Vuex / Redux | — |
-| Node.js / Go / Python / Rust | TanStack Query / RTK Query | — |
+**New Features:**
+- 多项目扫描（一条命令扫前端 + 后端 + 网关）
+- 前后端一体化（API 映射、字段校验、字典、联动规则、权限矩阵）
+- 跨系统串联（system-topology + 统一搜索）
+- 12h 新鲜度模型 + stale 标记 + 答案水印
+- 人工编辑保护（update 不覆盖手改过的文档）
+- 异常码索引（code + 抛出位置 + 触发条件）
+- 层次 2 flow（条件分支 + 事务边界 + 异常码，LM 辅助）
+- bge-m3 嵌入模型（中文优化，8192 上下文）
+- verify-report.md 覆盖率校验
+- 前端表单校验 vs 数据库约束比对
 
-## 生成的图表示例
-
-插件会自动生成以下 Mermaid 图表：
-
-- **ER 图** — 数据库表关系
-- **时序图** — 核心业务接口调用链
-- **状态图** — 订单/审批等状态机
-- **流程图** — 核心业务操作流程
-
-## 工作原理
-
-1. 扫描项目结构，识别技术栈和框架
-2. 解析源码提取：路由、API、数据模型、状态管理
-3. 连接数据库（可选）读取表结构和采样数据
-4. 交叉引用前后端 API 调用关系
-5. 生成结构化 Markdown 知识库 + CLAUDE.md 索引
-
-## 增量更新
-
-运行 `/project-scan update` 时，插件基于 `git diff` 分析变更文件，只重新扫描受影响的模块：
-
-| 变更文件 | 触发更新 |
-|----------|----------|
-| Controller / Route | API 文档 |
-| Entity / Model | 数据模型 + ER 图 |
-| 前端路由配置 | 路由表 |
-| API 调用层 | 前端 API + 交叉引用 |
-| 数据库 migration | Schema + ER 图 |
-
-## 配置
-
-无需额外配置。插件通过交互式问答收集必要信息（数据库连接、源目录路径等）。
-
-扫描状态保存在 `.scan-state.json` 中，支持后续增量更新和新鲜度检查。
-
-## 向量语义检索（可选）
-
-扫描完成后，插件会提示是否生成向量索引。启用后可通过语义搜索定位代码：
-
-**前置条件（二选一）：**
-- Ollama 本地运行（`brew install ollama && ollama serve && ollama pull nomic-embed-text`）
-- 设置 OpenAI API key（`export OPENAI_API_KEY=xxx`）
-
-**使用方式：**
-
-```
-/project-scan search 退款超时处理逻辑
-/project-scan search --type=business 对账流程
-/project-scan search --type=code 用户权限校验
-```
-
-索引范围包括：
-- 知识库文档（`ai/backend/`、`ai/frontend/`、`ai/business/`）
-- 源码文件（从 `.scan-state.json` 中声明的源码路径自动解析）
-- PRD 文档（`prd/` 目录 + `.scan-state.json` 中声明的外部 PRD 路径）
-
-## 定时自动更新（可选）
-
-配置后每天定时检查生产分支变更，自动增量更新知识库和向量索引：
-
-```
-/project-scan auto-update          # 交互式配置（会询问是否启用、更新时间）
-/project-scan auto-update off      # 关闭
-/project-scan auto-update status   # 查看状态
-```
-
-支持 macOS（launchd）和 Windows（Task Scheduler）。
-
-## 已知问题
-
-- `claude plugin update project-scan` 不可用，请使用上方"更新"章节的手动方式
-
-## License
-
-MIT
+**Migration:**
+- v1 `ai/` 在首次跑 v2 时自动备份到 `ai.v1-backup-<timestamp>/`

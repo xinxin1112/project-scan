@@ -3,9 +3,94 @@ name: project-scan
 description: Use when scanning a project codebase to generate knowledge base, when needing to understand a legacy project quickly, when the user says "scan project", "generate docs", "project knowledge", wants CLAUDE.md generated from code, or when searching code by semantic meaning ("search code", "find implementation", "locate logic", "vector search")
 ---
 
-# Project Scan
+# Project Scan v2
 
-Scan any project codebase and generate a dual-format knowledge base: AI context (CLAUDE.md) + human-readable documentation (docs/project-knowledge.md).
+扫描项目代码库，生成结构化知识库（KB）+ 向量索引。支持多项目、前后端一体化、跨系统串联。
+
+## 版本分发
+
+```
+检测 /Users/a6667/bilibili/project-scan/scan-config.yaml 是否存在？
+├── 存在 → v2 模式（本节以下逻辑）
+└── 不存在 → v1 兼容模式（跳到下方"v1 兼容"段）
+```
+
+## v2 子命令
+
+| 命令 | 说明 | 脚本 |
+|------|------|------|
+| `/project-scan` | 全量扫描所有项目 | `node scripts/scan-all.js` |
+| `/project-scan update` | 增量更新（只重生成过期文档） | `node scripts/incremental.js` |
+| `/project-scan update --force` | 强制重生成（含 human_edited） | `node scripts/incremental.js --force` |
+| `/project-scan update --auto-lm` | 增量 + 自动调 LM 重生成层次2 flow | `node scripts/incremental.js --auto-lm` |
+| `/project-scan search <query>` | 跨项目语义搜索 | `node scripts/unified-search.js <query>` |
+| `/project-scan search <query> --project=X` | 只搜指定项目 | `node scripts/unified-search.js <query> --project=X` |
+| `/project-scan check` | 新鲜度检查（交互式） | `node scripts/freshness.js --force` |
+| `/project-scan verify` | 覆盖率校验 | `node scripts/verify.js` |
+| `/project-scan setup` | 首次配置（生成 scan-config.yaml） | 交互式引导 |
+
+## v2 全量扫描流程（`/project-scan`）
+
+```bash
+cd /Users/a6667/.claude/skills/project-scan
+export PUR_DB_PASSWORD=<从环境变量读>
+node scripts/scan-all.js /Users/a6667/bilibili/project-scan/scan-config.yaml
+```
+
+内部流程：
+1. 读 `scan-config.yaml`
+2. 对每个 project 按 type 分发：
+   - `java-spring` → entity + enum + state-machine + contract + flow + method-index + error-codes + rules
+   - `java-spring` + `role: gateway` → 只提取 Retrofit 转发映射
+   - `react` → routes + api-client + api-types + pages + stores + hermes-dict + frontend-enums + field-linkage + node-button-matrix
+3. 跨项目：保留已有的 system-topology.md + frontend-backend-map.md（不覆盖）
+4. 每个项目建向量库（bge-m3）
+5. 生成 INDEX.md + CLAUDE.md
+
+## v2 增量更新流程（`/project-scan update`）
+
+```bash
+node scripts/incremental.js kb . [--force] [--auto-lm]
+```
+
+内部流程：
+1. 检测人工编辑（body hash 比对）→ 自动标记 human_edited
+2. git diff 找过期文档（sources 反向索引）
+3. 分类：
+   - 层次 1（纯脚本）→ 直接重生成
+   - 层次 2（含条件分支）→ 需要 LM（`--auto-lm` 时构建 prompt）
+4. 跳过 human_edited 文档（除非 `--force`）
+5. 重建向量库
+
+## v2 搜索流程（`/project-scan search`）
+
+```bash
+node scripts/unified-search.js "查询内容" [--project=pur-center] [--top=10]
+```
+
+跨 3 个项目的向量库搜索，合并排序返回 top-K。
+
+## 配置文件位置
+
+```
+/Users/a6667/bilibili/project-scan/scan-config.yaml
+```
+
+## 知识库物理位置
+
+```
+/Users/a6667/bilibili/project-scan/
+├── scan-config.yaml
+├── system-topology.md
+├── frontend-backend-map.md
+├── pur-center/kb/ + .vector-store/
+├── srm-web/kb/ + .vector-store/
+└── supplier-portal/kb/ + .vector-store/
+```
+
+---
+
+## v1 兼容模式（scan-config.yaml 不存在时）
 
 ## 初始化（每次执行 /project-scan 时首先运行）
 

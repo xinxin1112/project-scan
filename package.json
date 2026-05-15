@@ -1,10 +1,11 @@
 {
   "name": "project-scan",
-  "version": "1.9.2",
-  "description": "Claude Code plugin - scan project codebase to generate AI knowledge base",
+  "version": "2.0.0",
+  "description": "Claude Code skill - scan project codebase to generate structured knowledge base with vector search",
   "private": true,
   "dependencies": {
     "@lancedb/lancedb": "^0.27.2",
+    "js-yaml": "^4.1.1",
     "mysql2": "^3.11.0"
   }
 }

@@ -7,7 +7,19 @@ const { detectProvider, embedBatch } = require('./embed');
 const MAX_TOKENS_ESTIMATE = 1000;
 const OVERLAP_TOKENS = 200;
 const SHORT_FILE_THRESHOLD = 800;
-const CHARS_PER_TOKEN = 4;
+const CHARS_PER_TOKEN_EN = 4;
+const CHARS_PER_TOKEN_ZH = 1.5;
+
+function estimateCharsPerToken(text) {
+  // 检测中文字符比例
+  const zhChars = (text.match(/[一-鿿㐀-䶿]/g) || []).length;
+  const ratio = text.length > 0 ? zhChars / text.length : 0;
+  // 中文占比 > 30% 时用中文估算
+  if (ratio > 0.3) return CHARS_PER_TOKEN_ZH;
+  // 混合内容用加权
+  if (ratio > 0.1) return CHARS_PER_TOKEN_EN * (1 - ratio) + CHARS_PER_TOKEN_ZH * ratio;
+  return CHARS_PER_TOKEN_EN;
+}
 
 const CODE_EXTENSIONS = new Set([
   '.java', '.kt', '.ts', '.tsx', '.js', '.jsx', '.vue', '.py', '.go', '.rs'
@@ -31,7 +43,7 @@ function detectLanguage(filePath) {
 }
 
 function estimateTokens(text) {
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
+  return Math.ceil(text.length / estimateCharsPerToken(text));
 }
 
 function extractClassName(content, language) {

@@ -2,23 +2,70 @@
 const http = require('http');
 const https = require('https');
 
+// Preferred embedding models, ordered by priority
+// bge-m3: Multilingual (100+ langs), Chinese first-class, 1024d, 8192 context
+// nomic-embed-text: English-focused, 768d, general purpose fallback
+const PREFERRED_MODELS = [
+  { name: 'bge-m3', dimensions: 1024, lang: 'multilingual' },
+  { name: 'bge-small-zh-v1.5', dimensions: 512, lang: 'zh' },
+  { name: 'nomic-embed-text', dimensions: 768, lang: 'en' },
+];
+
 async function detectProvider() {
+  // Strategy 1: Check EMBEDDING_MODEL env override
+  if (process.env.EMBEDDING_MODEL) {
+    const model = process.env.EMBEDDING_MODEL;
+    const baseUrl = process.env.EMBEDDING_BASE_URL || 'http://127.0.0.1:11434';
+    const dims = parseInt(process.env.EMBEDDING_DIMENSIONS || '512');
+    if (baseUrl.includes('11434')) {
+      return { provider: 'ollama', model, dimensions: dims };
+    } else {
+      return { provider: 'openai-compatible', model, dimensions: dims, baseUrl };
+    }
+  }
+
+  // Strategy 2: Ollama with preferred model detection
   try {
     const res = await fetchJSON('http://127.0.0.1:11434/api/tags', { timeout: 3000 });
     if (res && res.models) {
-      const hasNomic = res.models.some(m => m.name && m.name.includes('nomic-embed-text'));
-      if (hasNomic) return { provider: 'ollama', model: 'nomic-embed-text', dimensions: 768 };
+      // Check for preferred models in priority order
+      for (const preferred of PREFERRED_MODELS) {
+        const found = res.models.some(m => m.name && m.name.includes(preferred.name));
+        if (found) return { provider: 'ollama', model: preferred.name, dimensions: preferred.dimensions };
+      }
+
+      // No preferred model found — prompt user to install bge-m3
       if (res.models.length > 0) {
-        console.error('Ollama detected but nomic-embed-text not found. Pulling model (this may take a few minutes)...');
-        await pullModel('nomic-embed-text');
-        console.error('Model pulled successfully.');
-        return { provider: 'ollama', model: 'nomic-embed-text', dimensions: 768 };
+        console.error('');
+        console.error('Ollama 已运行，但未找到推荐的 embedding 模型。');
+        console.error('');
+        console.error('推荐安装 bge-m3（多语言，中文一等公民，1024维，8192 上下文）：');
+        console.error('  ollama pull bge-m3');
+        console.error('');
+        console.error('或使用中文小模型（512维）：');
+        console.error('  ollama pull bge-small-zh-v1.5');
+        console.error('');
+        console.error('正在自动拉取 bge-m3 ...');
+        try {
+          await pullModel('bge-m3');
+          console.error('模型拉取成功。');
+          return { provider: 'ollama', model: 'bge-small-zh-v1.5', dimensions: 512 };
+        } catch (pullErr) {
+          console.error('bge-small-zh-v1.5 拉取失败，尝试 nomic-embed-text ...');
+          await pullModel('nomic-embed-text');
+          console.error('模型拉取成功。');
+          return { provider: 'ollama', model: 'nomic-embed-text', dimensions: 768 };
+        }
       }
     }
   } catch (e) {}
 
+  // Strategy 3: OpenAI API (or compatible)
   if (process.env.OPENAI_API_KEY) {
-    return { provider: 'openai', model: 'text-embedding-3-small', dimensions: 1536 };
+    const baseUrl = process.env.EMBEDDING_BASE_URL || 'https://api.openai.com';
+    const model = process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
+    const dims = parseInt(process.env.EMBEDDING_DIMENSIONS || '1536');
+    return { provider: 'openai', model, dimensions: dims, baseUrl };
   }
 
   return null;
@@ -45,8 +92,10 @@ async function pullModel(model) {
 async function embedBatch(texts, provider) {
   if (provider.provider === 'ollama') {
     return embedOllama(texts, provider.model);
+  } else if (provider.provider === 'openai-compatible') {
+    return embedOpenAI(texts, provider.model, provider.baseUrl);
   } else {
-    return embedOpenAI(texts, provider.model);
+    return embedOpenAI(texts, provider.model, provider.baseUrl || 'https://api.openai.com');
   }
 }
 
@@ -73,11 +122,15 @@ async function embedOllama(texts, model) {
   return results;
 }
 
-async function embedOpenAI(texts, model) {
+async function embedOpenAI(texts, model, baseUrl) {
+  const parsed = new URL(baseUrl || 'https://api.openai.com');
+  const client = parsed.protocol === 'https:' ? https : http;
   const data = JSON.stringify({ input: texts, model });
   const res = await new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'api.openai.com', port: 443, path: '/v1/embeddings',
+    const req = client.request({
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path: `${parsed.pathname === '/' ? '' : parsed.pathname}/v1/embeddings`,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
