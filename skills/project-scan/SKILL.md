@@ -29,7 +29,53 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 | `/project-scan verify` | 覆盖率校验 | `node scripts/verify.js` |
 | `/project-scan setup` | 首次配置（生成 scan-config.yaml） | 交互式引导 |
 
-## v2 全量扫描流程（`/project-scan`）
+## v2 向量库配置（首次运行时交互）
+
+全量扫描完成后，询问用户是否构建向量库：
+
+```
+扫描完成，共生成 X 份文档。
+
+是否构建向量索引？（支持语义搜索，如"确认对账单报错"）
+  1. 是，构建向量库（需要 Ollama + bge-m3 模型，约 1.2GB）
+  2. 否，只保留 markdown 文档（后续可用 /project-scan reindex 补建）
+
+用户选 1 →
+  检测 Ollama 是否运行：
+    ├─ 未运行 → 提示："请先启动 Ollama：ollama serve"，等待用户确认后重试
+    └─ 已运行 → 检测 bge-m3 模型：
+        ├─ 已安装 → 直接构建向量库
+        └─ 未安装 → 提示：
+            "embedding 模型 bge-m3 未安装（约 1.2GB）。
+             是否自动拉取？
+               1. 是，自动拉取（ollama pull bge-m3）
+               2. 否，我手动安装后再运行 /project-scan reindex"
+            用户选 1 → 执行 ollama pull bge-m3 → 等待完成 → 构建向量库
+            用户选 2 → 跳过向量库，扫描结束
+
+用户选 2 → 跳过向量库，扫描结束
+```
+
+### 向量库相关命令
+
+| 命令 | 说明 |
+|------|------|
+| `/project-scan reindex` | 重建所有项目的向量库（切换模型后使用） |
+| `/project-scan search <query>` | 跨项目语义搜索（需要向量库已构建） |
+
+### 环境变量覆盖
+
+```bash
+# 使用自定义 embedding 模型（如内部部署的模型）
+export EMBEDDING_MODEL=bge-m3
+export EMBEDDING_BASE_URL=http://127.0.0.1:11434  # 默认 Ollama 地址
+
+# 使用 OpenAI 兼容 API
+export EMBEDDING_BASE_URL=https://your-api.example.com/v1
+export EMBEDDING_MODEL=text-embedding-3-small
+```
+
+---
 
 ```bash
 cd /Users/a6667/.claude/skills/project-scan
