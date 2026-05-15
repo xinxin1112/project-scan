@@ -33,7 +33,11 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 | `/project-scan search <query> --project=X` | 只搜指定项目 | `node scripts/unified-search.js <query> --project=X` |
 | `/project-scan check` | 新鲜度检查（交互式） | `node scripts/freshness.js --force` |
 | `/project-scan verify` | 覆盖率校验 | `node scripts/verify.js` |
-| `/project-scan setup` | 首次配置（生成 scan-config.yaml） | 交互式引导 |
+| `/project-scan level2` | 对核心方法/组件生成层次 2 | 交互式（前后端都做） |
+| `/project-scan level2 --backend` | 只做后端层次 2 | 分析 Service 方法体 |
+| `/project-scan level2 --frontend` | 只做前端层次 2 | 分析表单组件联动 |
+| `/project-scan level2 --frontend --app=reconcile-mng` | 指定前端 app | 只分析该 app 的组件 |
+| `/project-scan level2 --backend --method=confirm` | 指定后端方法 | 只分析该方法 |
 
 ## v2 setup 交互流程（`/project-scan setup`）
 
