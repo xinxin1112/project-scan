@@ -396,7 +396,10 @@ node scripts/incremental.js kb . [--force] [--auto-lm]
 2. git diff 找过期文档（sources 反向索引）
 3. 分类：
    - 层次 1（纯脚本）→ 直接重生成
-   - 层次 2（含条件分支）→ 需要 LM（`--auto-lm` 时构建 prompt）
+   - 层次 2（含条件分支/联动）→ 看 `scan-config.yaml` 的 `level2` 配置：
+     - `level2.backend.auto_update: true` → 自动重生成后端层次 2
+     - `level2.frontend.auto_update: true` → 自动重生成前端层次 2
+     - 两者都为 false → 跳过层次 2（除非显式传 `--auto-lm`）
 4. 跳过 human_edited 文档（除非 `--force`）
 5. 重建向量库
 
