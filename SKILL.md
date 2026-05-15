@@ -292,6 +292,12 @@ STOP 等待用户回复。
   3. 当前 AI 会话直接分析代码，输出结构化的层次 2 文档
   4. 写入 `kb/<module>/flows/<method>.md`（覆盖层次 1 版本）
 
+  全部完成后，自动重建向量库（层次 2 文档已变更，向量库需要同步）：
+  ```bash
+  node scripts/kb-vector-index.js <kb-dir> <vector-store-dir>
+  ```
+  输出："✓ 层次 2 flow 生成完成（X 份），向量库已同步更新"
+
 用户选 2 → 跳过，扫描结束。提示：
   ```
   好的。后续需要时执行：
