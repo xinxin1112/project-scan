@@ -100,24 +100,38 @@ async function embedBatch(texts, provider) {
 }
 
 async function embedOllama(texts, model) {
-  const results = [];
-  for (const text of texts) {
-    const data = JSON.stringify({ model, prompt: text });
-    const res = await new Promise((resolve, reject) => {
-      const req = http.request({
-        hostname: '127.0.0.1', port: 11434, path: '/api/embeddings',
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        timeout: 30000
-      }, (res) => {
-        let body = '';
-        res.on('data', chunk => body += chunk);
-        res.on('end', () => resolve(JSON.parse(body)));
+  const CONCURRENCY = 5; // 并发数
+  const results = new Array(texts.length);
+
+  for (let i = 0; i < texts.length; i += CONCURRENCY) {
+    const batch = texts.slice(i, i + CONCURRENCY);
+    const promises = batch.map((text, idx) => {
+      const data = JSON.stringify({ model, prompt: text });
+      return new Promise((resolve, reject) => {
+        const req = http.request({
+          hostname: '127.0.0.1', port: 11434, path: '/api/embeddings',
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          timeout: 30000
+        }, (res) => {
+          let body = '';
+          res.on('data', chunk => body += chunk);
+          res.on('end', () => {
+            try {
+              const parsed = JSON.parse(body);
+              resolve({ index: i + idx, embedding: parsed.embedding });
+            } catch (e) { reject(e); }
+          });
+        });
+        req.on('error', reject);
+        req.write(data);
+        req.end();
       });
-      req.on('error', reject);
-      req.write(data);
-      req.end();
     });
-    results.push(res.embedding);
+
+    const batchResults = await Promise.all(promises);
+    for (const r of batchResults) {
+      results[r.index] = r.embedding;
+    }
   }
   return results;
 }
