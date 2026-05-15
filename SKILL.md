@@ -10,10 +10,16 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 ## 版本分发
 
 ```
-检测 /Users/a6667/bilibili/project-scan/scan-config.yaml 是否存在？
-├── 存在 → v2 模式（本节以下逻辑）
-└── 不存在 → v1 兼容模式（跳到下方"v1 兼容"段）
+检测 scan-config.yaml 是否存在？（优先检查 output_dir，其次当前目录）
+├── 存在 → v2 模式（按子命令分发）
+│     ├── 无参数 → 全量扫描（scan-all.js）
+│     ├── update → 增量更新
+│     ├── search → 统一搜索
+│     └── ...
+└── 不存在 → 进入 setup 交互流程（生成 scan-config.yaml）
 ```
+
+**重要**：当 `scan-config.yaml` 不存在时，不走 v1 兼容模式，直接进入 v2 setup 引导。
 
 ## v2 子命令
 
@@ -28,6 +34,179 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 | `/project-scan check` | 新鲜度检查（交互式） | `node scripts/freshness.js --force` |
 | `/project-scan verify` | 覆盖率校验 | `node scripts/verify.js` |
 | `/project-scan setup` | 首次配置（生成 scan-config.yaml） | 交互式引导 |
+
+## v2 setup 交互流程（`/project-scan setup`）
+
+当 `scan-config.yaml` 不存在，或用户显式调用 `/project-scan setup` 时执行。
+
+### Step 1 — 输出目录
+
+```
+知识库输出目录（所有项目的 KB + 向量库都放这里）：
+```
+
+STOP 等待用户回复。默认建议当前目录或 `~/bilibili/project-scan`。
+
+### Step 2 — 收集后端项目
+
+```
+后端项目 git 地址或本地路径：
+（支持多个后端项目，逗号分隔或多次输入。输入"完成"结束）
+```
+
+STOP 等待用户回复。
+
+对每个后端项目：
+
+```
+{项目名} 的生产分支名称（如 main/master/release_prd）：
+```
+
+STOP 等待用户回复。
+
+```
+{项目名} 的角色：
+1. 业务后端（完整四层扫描）
+2. 网关/转发层（只提取转发映射）
+```
+
+STOP 等待用户回复。
+
+如果是业务后端，检测多模块：
+```bash
+# 从 settings.gradle 或 pom.xml 解析模块列表
+```
+
+```
+检测到以下模块：
+- pur-reconcile
+- pur-order
+- pur-supplier
+- ...
+
+请选择要扫描的模块（逗号分隔，或 all）：
+```
+
+STOP 等待用户回复。
+
+对选中的每个模块，自动检测路径（entity_path、controller_path、enum_path 等）。如果检测不到，问用户：
+
+```
+模块 {name} 的 Entity 目录路径（相对于项目根）：
+（检测到候选：app/{name}/src/main/java/.../entity/）
+直接回车确认，或输入其他路径：
+```
+
+### Step 3 — 收集前端项目
+
+```
+前端项目 git 地址或本地路径（没有可输入"跳过"）：
+```
+
+STOP 等待用户回复。
+
+如果有前端项目：
+
+```
+{项目名} 的生产分支名称：
+```
+
+STOP 等待用户回复。
+
+检测前端 apps：
+```
+检测到以下前端应用：
+- reconcile-mng (apps/reconcile-mng)
+- supplier-c (apps/supplier-c)
+- ...
+
+请选择要扫描的应用（逗号分隔，或 all）：
+```
+
+STOP 等待用户回复。
+
+检测共享资源：
+```
+检测到字典文件：packages/dictionary/src/generated/dictConstants.ts
+检测到 API 生成目录：packages/service/src/generated/
+确认？(y/n)
+```
+
+### Step 4 — 项目间关系
+
+如果有多个项目：
+
+```
+请描述项目间的调用关系：
+
+已收集的项目：
+- pur-center (业务后端)
+- srm-web (前端)
+- supplier-portal (网关)
+
+前端应用 reconcile-mng 调用哪个后端？
+1. 直连 pur-center
+2. 经过 supplier-portal 转发到 pur-center
+3. 其他
+
+前端应用 supplier-c 调用哪个后端？
+1. 直连 pur-center
+2. 经过 supplier-portal 转发到 pur-center
+3. 其他
+```
+
+STOP 等待用户回复。
+
+### Step 5 — 数据库（可选）
+
+```
+是否配置数据库连接？（用于获取 DDL 字段类型/索引信息）
+1. 是
+2. 否（从代码推断）
+```
+
+STOP 等待用户回复。
+
+如果选是：
+```
+数据库类型：mysql / postgresql
+Host:
+Port:
+Database:
+Username:
+Password 环境变量名（如 PUR_DB_PASSWORD，实际密码通过 export 设置）：
+```
+
+STOP 等待用户回复。
+
+### Step 6 — 生成配置文件
+
+收集完所有信息后，调用脚本生成 `scan-config.yaml`：
+
+```bash
+node ${SKILL_DIR}/scripts/generate-config.js \
+  --output-dir="{用户指定的输出目录}" \
+  --config='{收集到的 JSON 配置}'
+```
+
+输出：
+```
+✓ 配置文件已生成：{output_dir}/scan-config.yaml
+
+下一步：
+  /project-scan          ← 开始全量扫描
+  /project-scan search   ← 扫描完成后可用
+```
+
+### Step 7 — Clone 源码（如果是 git 地址）
+
+对每个 git 地址的项目：
+```bash
+mkdir -p {output_dir}/.sources
+git clone --depth 1 --branch {branch} {git_url} {output_dir}/.sources/{project_name}
+```
+
+如果是本地路径，在 config 里直接引用该路径（不 clone）。
 
 ## v2 向量库配置（首次运行时交互）
 
