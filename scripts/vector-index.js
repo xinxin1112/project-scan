@@ -95,8 +95,9 @@ function splitByMethods(content, language, filePath) {
 }
 
 function splitLongChunk(chunk) {
-  const maxChars = MAX_TOKENS_ESTIMATE * CHARS_PER_TOKEN;
-  const overlapChars = OVERLAP_TOKENS * CHARS_PER_TOKEN;
+  const cpt = estimateCharsPerToken(chunk.text);
+  const maxChars = MAX_TOKENS_ESTIMATE * cpt;
+  const overlapChars = OVERLAP_TOKENS * cpt;
 
   if (chunk.text.length <= maxChars) return [chunk];
 

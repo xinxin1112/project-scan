@@ -3,36 +3,57 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 const { execSync } = require('child_process');
+const os = require('os');
 
 const SCRIPTS_DIR = path.join(__dirname);
+const CONCURRENCY = Math.max(os.cpus().length, 4);
 
 function loadConfig(configPath) {
   const content = fs.readFileSync(configPath, 'utf-8');
   return yaml.load(content);
 }
 
+async function parallelMap(items, fn, concurrency = CONCURRENCY) {
+  const results = [];
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
 async function scanAll(configPath) {
   const config = loadConfig(configPath);
   const outputDir = config.output_dir;
+  const startTime = Date.now();
 
-  console.log('=== project-scan v2 全量扫描 ===\n');
+  console.log('=== project-scan v2 全量扫描（并行模式） ===\n');
   console.log(`输出目录: ${outputDir}`);
   console.log(`项目数: ${config.projects.length}`);
+  console.log(`并发度: ${CONCURRENCY}`);
   console.log('');
 
-  for (const project of config.projects) {
-    console.log(`\n--- 扫描 ${project.name} (${project.type}) ---\n`);
-
-    // 解析源码路径：优先 source 字段，其次从 .sources/<name> 推断
+  // 预处理：解析源码路径
+  const validProjects = config.projects.filter(project => {
     if (!project.source) {
       const sourcesDir = path.join(outputDir, '.sources', project.name);
       if (fs.existsSync(sourcesDir)) {
         project.source = sourcesDir;
       } else {
         console.log(`  ⚠ 源码路径未找到，跳过（${project.name}）`);
-        continue;
+        return false;
       }
     }
+    return true;
+  });
+
+  // 并行扫描所有项目
+  await Promise.all(validProjects.map(async (project) => {
+    console.log(`\n--- 扫描 ${project.name} (${project.type}) ---\n`);
 
     const projectOutputDir = path.join(outputDir, project.name);
     const kbDir = path.join(projectOutputDir, 'kb');
@@ -54,17 +75,19 @@ async function scanAll(configPath) {
     }
 
     // 建向量库
-    console.log(`  建向量库...`);
+    console.log(`  [${project.name}] 建向量库...`);
     const vectorStoreDir = path.join(projectOutputDir, '.vector-store');
     const { indexKb } = require('./kb-vector-index');
     await indexKb(kbDir, vectorStoreDir);
-  }
+    console.log(`  [${project.name}] ✓ 完成`);
+  }));
 
   // 跨项目文档
   console.log('\n--- 生成跨项目文档 ---\n');
   generateCrossProjectDocs(config, outputDir);
 
-  console.log('\n=== 扫描完成 ===');
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n=== 扫描完成（耗时 ${elapsed}s） ===`);
   printSummary(config, outputDir);
 }
 
@@ -79,14 +102,12 @@ async function scanJavaSpring(project, kbDir, config) {
 
   const commit = getCommit(project.source);
 
-  // 自动检测模块（如果 config 里没有 modules 字段）
   let modules = project.modules;
   if (!modules || modules.length === 0) {
     modules = autoDetectModules(project.source);
-    console.log(`  自动检测到 ${modules.length} 个模块`);
+    console.log(`  [${project.name}] 自动检测到 ${modules.length} 个模块`);
   }
 
-  // DB 配置（从 project 或全局 config 读取）
   const dbConfig = (project.db || config.database) ? {
     host: (project.db || config.database).host,
     port: (project.db || config.database).port,
@@ -95,11 +116,12 @@ async function scanJavaSpring(project, kbDir, config) {
     database: (project.db || config.database).database
   } : null;
 
-  for (const mod of modules) {
+  // 并行扫描所有模块
+  await parallelMap(modules, async (mod) => {
     const modKbDir = path.join(kbDir, mod.name);
-    console.log(`  模块: ${mod.name}`);
+    const modStart = Date.now();
 
-    // Entities — 自动检测路径
+    // Entities
     const entityDir = mod.entity_path
       ? path.join(project.source, mod.entity_path)
       : findDir(project.source, mod.name, ['entity', 'po', 'model']);
@@ -110,27 +132,21 @@ async function scanJavaSpring(project, kbDir, config) {
         const content = fs.readFileSync(f, 'utf-8');
         return content.includes('@TableName') || content.includes('@Entity') || content.includes('@Table');
       });
-      let count = 0;
       for (const f of entityFiles) {
-        const result = await generateEntityDoc(f, outDir, commit, dbConfig);
-        if (result) count++;
+        await generateEntityDoc(f, outDir, commit, dbConfig);
       }
-      if (count > 0) console.log(`    entities: ${count}`);
     }
 
-    // Enums (module)
+    // Enums
     if (mod.enum_path) {
       const enumDir = path.join(project.source, mod.enum_path);
       const outDir = path.join(modKbDir, 'domain/enums');
       fs.mkdirSync(outDir, { recursive: true });
       if (fs.existsSync(enumDir)) {
         const enumFiles = fs.readdirSync(enumDir).filter(f => f.endsWith('.java'));
-        let count = 0;
         for (const f of enumFiles) {
-          const result = generateEnumDoc(path.join(enumDir, f), outDir, commit);
-          if (result) count++;
+          generateEnumDoc(path.join(enumDir, f), outDir, commit);
         }
-        console.log(`    enums: ${count}`);
       }
     }
 
@@ -143,7 +159,6 @@ async function scanJavaSpring(project, kbDir, config) {
         const sourceDir = path.join(project.source, mod.path);
         generateStateMachineDoc(se.name, sourceDir, enumFile, outDir, commit);
       }
-      console.log(`    state-machines: ${mod.status_enums.length}`);
     }
 
     // Contracts
@@ -151,14 +166,11 @@ async function scanJavaSpring(project, kbDir, config) {
       const ctrlDir = path.join(project.source, mod.controller_path);
       const outDir = path.join(modKbDir, 'contracts/internal');
       fs.mkdirSync(outDir, { recursive: true });
-      const { parseControllerFile, generateContractDoc: genContract } = require('./contract-generator');
+      const { generateContractDoc: genContract } = require('./contract-generator');
       const ctrlFiles = findJavaFilesRecursive(ctrlDir);
-      let count = 0;
       for (const f of ctrlFiles) {
-        const result = genContract(f, outDir, commit);
-        if (result) count++;
+        genContract(f, outDir, commit);
       }
-      console.log(`    contracts: ${count}`);
     }
 
     // Method index
@@ -166,30 +178,29 @@ async function scanJavaSpring(project, kbDir, config) {
     const methodIndexPath = path.join(modKbDir, 'code/method-index.md');
     fs.mkdirSync(path.dirname(methodIndexPath), { recursive: true });
     generateMethodIndex(sourceDir, methodIndexPath, commit);
-    console.log(`    method-index: ✓`);
 
     // Flows
     if (mod.controller_path) {
       const ctrlDir = path.join(project.source, mod.controller_path);
       const outDir = path.join(modKbDir, 'flows');
       fs.mkdirSync(outDir, { recursive: true });
-      const result = generateFlowDocs(ctrlDir, sourceDir, outDir, commit);
-      console.log(`    flows: ${result.flowCount}`);
+      generateFlowDocs(ctrlDir, sourceDir, outDir, commit);
     }
 
     // Error codes
     if (mod.error_enum_path) {
       const outPath = path.join(modKbDir, 'domain/error-codes.md');
       generateErrorCodes(project.source, mod.error_enum_path, sourceDir, outPath, commit);
-      console.log(`    error-codes: ✓`);
     }
 
     // Rules
     const rulesPath = path.join(modKbDir, 'domain/rules/rule-candidates.md');
     fs.mkdirSync(path.dirname(rulesPath), { recursive: true });
     generateRulesDoc(sourceDir, rulesPath, commit);
-    console.log(`    rules: ✓`);
-  }
+
+    const elapsed = ((Date.now() - modStart) / 1000).toFixed(1);
+    console.log(`    [${project.name}/${mod.name}] ✓ (${elapsed}s)`);
+  });
 
   // Shared enums
   if (project.shared_enum_path) {
@@ -201,33 +212,29 @@ async function scanJavaSpring(project, kbDir, config) {
       const result = require('./enum-generator').generateEnumDoc(fp, sharedDir, commit);
       if (result) count++;
     });
-    console.log(`  shared enums: ${count}`);
+    console.log(`  [${project.name}] shared enums: ${count}`);
   }
-
-  // Navigation
-  const { generateModuleClaude, generateIndex } = require('./navigation-generator');
-  // 生成每个模块的 CLAUDE.md 和 INDEX.md 在最后统一做
 }
 
 async function scanReact(project, kbDir) {
   const { scanReactApp } = require('./frontend-generator');
   const commit = getCommit(project.source);
 
-  // 自动检测 apps（如果 config 里没有 apps 字段）
   let apps = project.apps;
   if (!apps || apps.length === 0) {
     apps = autoDetectReactApps(project.source);
-    console.log(`  自动检测到 ${apps.length} 个前端应用`);
+    console.log(`  [${project.name}] 自动检测到 ${apps.length} 个前端应用`);
   }
 
-  for (const app of apps) {
+  // 并行扫描所有 app
+  await parallelMap(apps, async (app) => {
     const appDir = path.join(project.source, app.path);
-    if (!fs.existsSync(appDir)) continue;
+    if (!fs.existsSync(appDir)) return;
     const outDir = path.join(kbDir, app.name);
     fs.mkdirSync(outDir, { recursive: true });
-    console.log(`  app: ${app.name} (${app.role || 'default'})`);
     scanReactApp(appDir, outDir, commit);
-  }
+    console.log(`    [${project.name}/${app.name}] ✓`);
+  });
 
   // Shared: hermesDict 字典
   if (project.shared && project.shared.dict_file) {
