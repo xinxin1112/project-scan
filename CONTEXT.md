@@ -5,12 +5,16 @@
 ## 术语
 
 **Knowledge Base (KB)**:
-生成的产物：按层组织的每模块 markdown 文件，加上顶层 `INDEX.md`。存放在每个模块的 `kb/` 目录下。
+生成的产物：按层组织的每模块 markdown 文件，加上顶层 `INDEX.md`。存放在 `<output_dir>/<project>/kb/` 下。
 _避免使用_：docs、knowledge graph、vector index
 
+**Project**:
+一个独立的 git 仓库，有自己的技术栈和构建系统（如 `pur-center`、`srm-web`、`supplier-portal`）。每个 Project 有独立的 KB 目录和向量库。多个 Project 通过 `scan-config.yaml` 的 `relations` 串联。
+_避免使用_：repo（太泛）、workspace
+
 **Module**:
-项目中独立作用域的单元（如 `pur-reconcile`、`pur-order`）。在多源模式下，每个模块拥有自己的知识库。
-_避免使用_：package、service、app
+Project 内独立作用域的单元（如 `pur-center` 下的 `pur-reconcile`、`pur-order`）。后端 Project 按 Module 生成四层 KB；前端 Project 按 App 生成。
+_避免使用_：package、service、app（前端用 App 区分）
 
 **KB Layer**:
 四个固定分类之一，用于组织模块内生成的文档：`domain`、`contracts`、`flows`、`code`。每个文档恰好属于一个层。
@@ -52,6 +56,7 @@ _避免使用_：section、category、dimension
 - **组织结构：`module/kb/{domain,contracts,flows,code}/`** — 按模块的知识库，内部分层。仓库级 `INDEX.md` 提供跨模块视图。
 - **扫描时的层路由：先路径 glob，再 LM。** 80% 的文件通过路径模式路由（如 `**/controller/**` → `contracts/internal/`）。Service 层文件和模糊类型由 LM 判断。单个源文件可能在多个层中产生文档（如 `BillReconcileServiceImpl` → 状态机 + 规则 + method-index）。
 - **Flows 生成：PRD + 状态机 + 代码调用图，优雅降级。** 三个来源都存在时合并；回退到状态机 + 代码，再回退到仅代码。对每个重要入口点始终生成*某些内容*。
+- **Flow 文档分两个层次。** 层次 1（纯脚本）：调用链 + 事务/异步注解标注，机械提取，`flow-generator.js` 生成。层次 2（LM 辅助）：条件分支 + 异常码 + 事务边界 + 决策点表 + 入参类型，需要 LM 读 Service 方法体后输出结构化文档。层次 2 通过 `flow-level2-builder.js` 构建 prompt，由 `incremental.js --auto-lm` 触发重生成。层次 2 文档通过 `## 条件分支流程` heading 识别。核心方法（submit/confirm/cancel 等）优先做层次 2。
 - **调用图深度 = 2。** 追踪 `Controller → Service → (Mapper | Client | 兄弟 Service)`。Mapper 和外部客户端标记引用，不展开。
 - **Flow 生成触发条件。** 当 Controller 方法调用 ≥2 个不同的 Service/外部 Client 或触发状态机转换时，成为一个 flow。
 - **CLAUDE.md 格式：索引 + 每个文档一行摘要，顶部加"入口 flow"指针。** 摘要来自每个文档的 frontmatter。
@@ -60,7 +65,8 @@ _避免使用_：section、category、dimension
 - **`code/method-index.md` 每个模块一个文件**，按类分节。不是每个类一个文件。
 - **Frontmatter 最小化：5 个字段。** `kb_layer`、`summary`、`sources`、`last_scan_commits`、`stale`（布尔值，默认 false）。可选伴随字段：`stale: true` 时的 `stale_reason`；人工修改文档正文时的 `human_edited: true`。没有 `doc_type`，没有 `(certainty, complexity)`，没有 `related_entities` / `related_flows`。理由：Consumer（Claude Code Agent）直接读取 markdown 链接和文本 — 它不解析 frontmatter 来导航。跨文档关系以 markdown 链接形式存在于文档正文中（单一事实来源）。`strategy_hint`（按 kb-knowledge-base 文档 §4）如果下游需要，可以仅从 `kb_layer` 派生。
 - **`search` 子命令是辅助的，非核心。** 向量索引跟随生成器写入的内容 — 没有双集合、没有 Reranker、不返回 `strategy_hint`、没有混合搜索。README 将 `search` 降级为"补充"部分。现有 `vector-search-v2/plan.md` 条目拆分为：(a) 与生成器对齐的（保留并合并到生成器轨道），(b) 纯搜索质量的（暂停）。参见 `docs/adr/0001-search-as-auxiliary.md` 的 v2-plan 分类。
-- **KB 物理位置：在真实开发仓库中，位于 `<repo>/kb/`。** 技能从 `~/.claude/skills/project-scan/<repo>/` 下的自有副本扫描（用户在此运行 `git pull <main-branch>`），但将生成的 KB 写入用户的真实工作仓库（如 `/Users/a6667/bilibili/pur-center/kb/`）。`<repo>/CLAUDE.md` 在底部的 `<!-- KB START -->...<!-- KB END -->` 块中被修补。`.scan-state.json` 保持 gitignore（frontmatter `last_scan_commits` 是事实来源）。
+- **KB 物理位置：独立目录，不在任何 git 仓库内。** 路径由 `scan-config.yaml` 的 `output_dir` 配置（如 `/Users/a6667/bilibili/project-scan/`）。按项目分子目录（`<output_dir>/<project>/kb/`）。不污染项目仓库，不影响团队成员。扫描源仍在 `<output_dir>/.sources/<repo>/`（用户在此运行 `git pull <main-branch>`）。不再修补项目仓库的 `CLAUDE.md`。
+- **`scan-config.yaml` 是项目配置的唯一来源。** 脚本本身不含任何项目名/路径/字段名。所有项目特定信息（源码路径、分支、模块列表、DB 连接、项目间关系、前端 app 列表、字典文件路径、状态枚举路径）都从此文件读取。首次运行 `/project-scan setup` 时交互式生成。后续手动编辑。
 - **KB 反映主分支快照，而非当前功能分支。** 技能扫描用户拉取到技能副本中的主分支（`release_prd` 或等效分支）。当 Consumer Agent 在功能分支上时，KB 被视为稳定基线 + Agent 读取 `git diff` 获取增量。frontmatter `last_scan_commits` 记录主分支 commit，以便 Consumer 知道 KB 版本。
 - **新鲜度模型：定时器 + 引用时间检查的 AND 条件，12 小时阈值，静默自动更新。**
   - 定时任务每 12 小时运行 `git fetch origin <main-branch>`。
@@ -73,6 +79,7 @@ _避免使用_：section、category、dimension
 - **跨模块 flow 放置：写在驱动模块中。** 拥有入口 Controller 的模块拥有 flow 文档。跨模块步骤使用指向入站契约的链接，不内联展开被调用方的逻辑。例外：没有单一驱动者的事件驱动 / MQ flow 放在仓库根目录的 `kb/cross-module-flows/` 目录中。
 - **`inbound.md` 的 `sources` 包含双方。** 调用方的源文件和被调用方暴露的方法都被追踪。任一方变更都会使入站契约文档失效。权衡：更频繁的重新生成，但任一方的签名漂移都会被捕获。
 - **扫描期间循环跨模块调用标记为警告。** 不阻止、不自动修复 — 在 `INDEX.md` 中显示为 `"架构异味：检测到 A 和 B 之间的循环依赖"`。这是架构关注点，与 KB 正确性无关。
+- **跨项目串联通过 `scan-config.yaml` 的 `relations` 配置 + 自动生成的拓扑/映射文档实现。** 每个 Project 有独立的 KB 和向量库；跨项目关联靠：(1) `system-topology.md` 全局拓扑图（从 relations 自动生成），(2) `frontend-backend-map.md` 前后端路由总表，(3) 各前端 app 的 `backend-mapping.md` 函数级映射（自动匹配前端函数名 → 后端 flow），(4) `unified-search.js` 跨项目向量搜索（遍历所有项目的 `.vector-store`，合并排序返回 top-K）。不合并向量库 — 各项目独立更新不互相影响。
 - **SKILL.md 单体文件暂时保留。** 75KB 单文件目前不是瓶颈。拆分为 `templates/prompts/*.md` 是 P3，推迟到主线重设计（KB 结构、frontmatter、新鲜度）落地后。重设计后重新评估大小 — 当前许多 Phase 内容可能会缩减。
 - **自验证是程序化的，非基于 LM。** 扫描完成后，`scripts/verify.js` 运行三项覆盖率检查：(1) 实体文档字段集 vs DDL 字段集，(2) 契约文档端点列表 vs `@RequestMapping` 注解集，(3) method-index 方法列表 vs 源文件公共方法集。输出：`<repo>/kb/verify-report.md`，包含覆盖率百分比和差距列表。没有基于 LM 的语义验证 — 单 Agent 自审查是已知的反模式（记录在 kb-knowledge-base 文档 §5 多 Agent 理由中）。
 - **Flow 验证较弱，这是设计意图。** 只运行一项 flow 检查：flow 步骤中提到的状态转换 vs 源码中的 `setStatus()` 调用。步骤数和源完整性检查的误报率太高。Flow 差距以警告形式显示，而非错误。
@@ -87,7 +94,7 @@ _避免使用_：section、category、dimension
 - **术语表位于仓库根目录，不在任何单个模块中。** `<repo>/kb/glossary.md` 是所有模块共享的业务词汇 — kb-driven §1"共享全局认知"。由 INDEX.md 作为第一个引用加载。
 - **共享层（pur-common）的枚举/常量放 `kb/shared/domain/enums/`，不归属任何单一模块。** 各模块 CLAUDE.md 用相对链接引用共享枚举。模块自己的枚举（如 `pur-reconcile/srm/enums/`）仍放 `kb/<module>/domain/enums/`。判定规则：源文件在 `pur-common` 或其他共享包下 → shared；源文件在模块自己的包下 → module。
 - **跨系统知识用 `kb/external-systems/` 手动维护。** 外部系统（规则引擎、Flow 审批、结算系统等）的接口契约和配置说明放在此目录，每个系统一份文档。这些文档 `human_edited: true` 始终为 true（永远手写），frontmatter `sources` 为空（无代码可扫）。模块 flow 文档中跨系统步骤用链接指向对应的外部系统文档。不尝试扫描外部系统代码 — 80% 的跨系统知识是接口契约 + 运营配置，一份 50 行 markdown 的 ROI 远高于写解析器。
-- **`<repo>/CLAUDE.md` 补丁包含 Consumer Agent 的系统指令。** `<!-- KB START -->...<!-- KB END -->` 块告诉下游 Agent：(1) 引用 KB 内容时，附加 `(KB version: <commit>, last update: <time>)`；(2) 如果 frontmatter 有 `stale: true`，前置过期警告。没有此指令，水印机制实际上不会触发 — 技能无法在运行时强制 Consumer 行为。**退出选项**：认为这过度干预的用户可以通过 `/project-scan config --no-instruction-injection` 禁用注入；此时只写入索引链接，不写行为指令。
+- **不再修补项目仓库的 CLAUDE.md。** KB 在独立目录，Consumer Agent 通过直接读取 `<output_dir>/<project>/kb/INDEX.md` 获取入口，不依赖项目仓库内的指针。版本水印和 stale 警告由 Consumer Agent 自行从 frontmatter 读取 — 不需要注入系统指令。
 - **第 5 类文件存在："仅索引，无文档"。** 常量、配置、工具类（`*Constants.java`、`application.yml`、`*Utils.java` 等）记录在 `code/method-index.md` 中，但不产生独立的 markdown 文档。它们不适合四个 KB Layer，膨胀文档数量对 Consumer 没有价值。
 - **PRD ↔ 代码绑定：默认向量召回，`prd-mapping.yaml` 作为覆盖。** 当 flow 生成器需要将 Controller 方法与 PRD 内容配对时，它 (a) 从方法名 + Service 调用链构建查询，(b) 从向量存储中召回 top-3 PRD 片段，(c) 传递给 LM。发现错误配对的用户在 `<repo>/kb/prd-mapping.yaml` 中添加条目（`{ prd_section, prd_file, driving_method }`）— 条目存在时覆盖召回。默认自动；手动映射是例外。模式匹配 kb-knowledge-base §4.4 动态策略注入。
 - **PRD 文件作为 `sources` 被追踪在消费它们的任何 KB 文档中。** 没有单独的 PRD 哈希机制。frontmatter `sources` 反向索引（决策 7）是唯一的追踪层 — 当 PRD 文件路径出现在 flow 的 `sources` 中时，PRD 变更时该 flow 会被重新生成（非 git 管理的 PRD 文件用 mtime 检查；git 追踪的用 `git diff`）。将 PRD 更新传播免费接入现有增量机制。

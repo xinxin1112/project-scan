@@ -15,15 +15,28 @@ README（v1）宣传支持 Vue、React、Go、Python、Rust。现实是：
 
 ## 决策
 
-**v2 仅为 Java/Spring 交付完整的四层路由。** 其他语言回退到降级模式：
+**v2 仅为 Java/Spring 交付完整的四层路由。** 其他语言有各自的扫描策略：
 
-- **前端（Vue/React）和非 Java 后端（Go/Python/Rust）**：扫描仅生成 `code/method-index.md`。不生成 `domain/`、`contracts/` 或 `flows/` 层。
-- README 的技术栈表更新以反映此情况。v2.x 可以在设计和验证后添加每语言路由模板（`templates/routing/<lang>.md`）。
+- **React 前端**：不走四层模型（domain/contracts/flows/code），而是有自己的文档类型集：
+  - `routes.md` — 路由表
+  - `api-client.md` — API 函数列表（从自动生成的 TS 文件提取）
+  - `api-types.md` — 接口 Req/Res 类型定义
+  - `stores.md` — Zustand store 的 state + action
+  - `hermes-dict.md` — 字典常量（从 hermesDict 生成文件提取，含全部 code + 中文标签）
+  - `frontend-enums.md` — 前端状态聚合映射（展示态 → 后端枚举集合）
+  - `field-linkage-rules.md` — 字段联动规则（隐藏/禁用/动态必填）
+  - `node-button-field-matrix.md` — 节点×按钮×字段权限矩阵
+  - `backend-mapping.md` — 前端函数 → 后端 flow 文档链接
+  - `field-consistency-report.md` — 前端 Req vs 后端 DTO 字段比对
+- **Java 网关（role: gateway）**：只生成 `api-mapping.md`（Retrofit 转发路径表 + 鉴权说明）
+- **非 Java 后端（Go/Python/Rust）**：仅生成 `code/method-index.md`。v2.x 可添加每语言路由模板。
+- README 的技术栈表更新以反映此情况。
 
 对于验证 fixture（Q15：pur-reconcile，然后 pur-center），这不是问题——两个目标都是 Java/Spring。
 
 ## 后果
 
-- 仅有前端或 Go/Python 项目的 v1 用户得到的 v2 输出不如 v1 丰富。这是覆盖面的退步，但是正确性的提升——v1 的前端输出从未很好地基于四层模型。
-- 该 skill 的定位变得更清晰："结构化 Java/Spring KB 生成器，为其他技术栈提供 code-index"。不做虚假宣传。
-- 未来工作：每语言路由模板。Vue/React 可能映射到 `domain`（store）+ `flows`（route → component 树）+ `code`，这需要自己的四层解释。不在 v2 范围内。
+- React 前端获得了丰富的扫描输出（不是降级模式），但文档类型集跟后端完全不同——不强行套四层模型。
+- 前后端通过 `backend-mapping.md` 和 `field-consistency-report.md` 串联，支持一体化排查。
+- 该 skill 的定位变为："Java/Spring 完整四层 + React 前端专属扫描 + 跨项目串联"。
+- 未来工作：Vue 前端支持（类似 React 的文档类型集）；Go/Python 的四层路由模板。
