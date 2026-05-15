@@ -23,6 +23,17 @@ async function scanAll(configPath) {
   for (const project of config.projects) {
     console.log(`\n--- 扫描 ${project.name} (${project.type}) ---\n`);
 
+    // 解析源码路径：优先 source 字段，其次从 .sources/<name> 推断
+    if (!project.source) {
+      const sourcesDir = path.join(outputDir, '.sources', project.name);
+      if (fs.existsSync(sourcesDir)) {
+        project.source = sourcesDir;
+      } else {
+        console.log(`  ⚠ 源码路径未找到，跳过（${project.name}）`);
+        continue;
+      }
+    }
+
     const projectOutputDir = path.join(outputDir, project.name);
     const kbDir = path.join(projectOutputDir, 'kb');
     fs.mkdirSync(kbDir, { recursive: true });
@@ -68,29 +79,43 @@ async function scanJavaSpring(project, kbDir, config) {
 
   const commit = getCommit(project.source);
 
-  for (const mod of project.modules) {
+  // 自动检测模块（如果 config 里没有 modules 字段）
+  let modules = project.modules;
+  if (!modules || modules.length === 0) {
+    modules = autoDetectModules(project.source);
+    console.log(`  自动检测到 ${modules.length} 个模块`);
+  }
+
+  // DB 配置（从 project 或全局 config 读取）
+  const dbConfig = (project.db || config.database) ? {
+    host: (project.db || config.database).host,
+    port: (project.db || config.database).port,
+    user: (project.db || config.database).username,
+    password: process.env[(project.db || config.database).password_env],
+    database: (project.db || config.database).database
+  } : null;
+
+  for (const mod of modules) {
     const modKbDir = path.join(kbDir, mod.name);
     console.log(`  模块: ${mod.name}`);
 
-    // Entities
-    if (mod.entity_path) {
-      const entityDir = path.join(project.source, mod.entity_path);
+    // Entities — 自动检测路径
+    const entityDir = mod.entity_path
+      ? path.join(project.source, mod.entity_path)
+      : findDir(project.source, mod.name, ['entity', 'po', 'model']);
+    if (entityDir && fs.existsSync(entityDir)) {
       const outDir = path.join(modKbDir, 'domain/entities');
       fs.mkdirSync(outDir, { recursive: true });
-      const entityFiles = fs.readdirSync(entityDir).filter(f => f.endsWith('.java'));
+      const entityFiles = findJavaFilesRecursive(entityDir).filter(f => {
+        const content = fs.readFileSync(f, 'utf-8');
+        return content.includes('@TableName') || content.includes('@Entity') || content.includes('@Table');
+      });
       let count = 0;
-      const dbConfig = project.db ? {
-        host: project.db.host,
-        port: project.db.port,
-        user: project.db.username,
-        password: process.env[project.db.password_env],
-        database: project.db.database
-      } : null;
       for (const f of entityFiles) {
-        const result = await generateEntityDoc(path.join(entityDir, f), outDir, commit, dbConfig);
+        const result = await generateEntityDoc(f, outDir, commit, dbConfig);
         if (result) count++;
       }
-      console.log(`    entities: ${count}`);
+      if (count > 0) console.log(`    entities: ${count}`);
     }
 
     // Enums (module)
@@ -188,11 +213,19 @@ async function scanReact(project, kbDir) {
   const { scanReactApp } = require('./frontend-generator');
   const commit = getCommit(project.source);
 
-  for (const app of project.apps) {
+  // 自动检测 apps（如果 config 里没有 apps 字段）
+  let apps = project.apps;
+  if (!apps || apps.length === 0) {
+    apps = autoDetectReactApps(project.source);
+    console.log(`  自动检测到 ${apps.length} 个前端应用`);
+  }
+
+  for (const app of apps) {
     const appDir = path.join(project.source, app.path);
+    if (!fs.existsSync(appDir)) continue;
     const outDir = path.join(kbDir, app.name);
     fs.mkdirSync(outDir, { recursive: true });
-    console.log(`  app: ${app.name} (${app.role})`);
+    console.log(`  app: ${app.name} (${app.role || 'default'})`);
     scanReactApp(appDir, outDir, commit);
   }
 
@@ -496,45 +529,68 @@ async function scanGateway(project, kbDir) {
   const { createFrontmatter, writeDocument } = require('./frontmatter');
   const commit = getCommit(project.source);
 
-  for (const mod of project.modules) {
-    if (mod.retrofit_api_path) {
-      const apiDir = path.join(project.source, mod.retrofit_api_path);
-      if (!fs.existsSync(apiDir)) continue;
+  // 自动检测 Retrofit API 目录
+  let modules = project.modules;
+  if (!modules || modules.length === 0) {
+    // 找所有包含 @GET/@POST 注解的 controller/api 目录
+    const retrofitDirs = [];
+    const sourceBase = project.source;
+    try {
+      const result = execSync(`grep -rl "@GET\\|@POST\\|@PUT\\|@DELETE" "${sourceBase}" --include="*.java" 2>/dev/null | head -20`).toString().trim();
+      if (result) {
+        const dirs = [...new Set(result.split('\n').map(f => path.dirname(f)))];
+        for (const d of dirs) {
+          retrofitDirs.push(d);
+        }
+      }
+    } catch (e) {}
 
-      const apis = [];
-      walkJava(apiDir, (fp) => {
-        const content = fs.readFileSync(fp, 'utf-8');
-        const lines = content.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-          const annMatch = lines[i].trim().match(/^@(GET|POST|PUT|DELETE)\("([^"]+)"\)/);
-          if (annMatch) {
-            for (let j = i + 1; j < Math.min(lines.length, i + 3); j++) {
-              const fnMatch = lines[j].match(/(\w+)\s*\(/);
-              if (fnMatch && !fnMatch[1].startsWith('@')) {
-                apis.push({ method: annMatch[1], path: annMatch[2], fn: fnMatch[1], file: path.basename(fp) });
-                break;
-              }
+    if (retrofitDirs.length > 0) {
+      modules = [{ name: project.name, retrofit_api_path: path.relative(sourceBase, retrofitDirs[0]) }];
+    } else {
+      modules = [];
+    }
+  }
+
+  for (const mod of modules) {
+    const retrofitPath = mod.retrofit_api_path;
+    if (!retrofitPath) continue;
+    const apiDir = path.join(project.source, retrofitPath);
+    if (!fs.existsSync(apiDir)) continue;
+
+    const apis = [];
+    walkJava(apiDir, (fp) => {
+      const content = fs.readFileSync(fp, 'utf-8');
+      const lines = content.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const annMatch = lines[i].trim().match(/^@(GET|POST|PUT|DELETE)\("([^"]+)"\)/);
+        if (annMatch) {
+          for (let j = i + 1; j < Math.min(lines.length, i + 3); j++) {
+            const fnMatch = lines[j].match(/(\w+)\s*\(/);
+            if (fnMatch && !fnMatch[1].startsWith('@')) {
+              apis.push({ method: annMatch[1], path: annMatch[2], fn: fnMatch[1], file: path.basename(fp) });
+              break;
             }
           }
         }
-      });
+      }
+    });
 
-      const lines = ['# 网关转发映射（supplier-portal → pur-center）', ''];
-      lines.push(`**转发接口数：** ${apis.length}`);
-      lines.push('');
-      lines.push('| HTTP | pur-center 路径 | 方法 | 来源 |');
-      lines.push('|------|----------------|------|------|');
-      for (const a of apis) lines.push(`| ${a.method} | \`${a.path}\` | ${a.fn} | ${a.file} |`);
-      lines.push('');
-      lines.push('## 鉴权');
-      lines.push('所有接口经 `SupplierInfoInterceptor`：从 token 提取 supplierCode → 注入转发请求 header');
+    const lines = ['# 网关转发映射（supplier-portal → pur-center）', ''];
+    lines.push(`**转发接口数：** ${apis.length}`);
+    lines.push('');
+    lines.push('| HTTP | pur-center 路径 | 方法 | 来源 |');
+    lines.push('|------|----------------|------|------|');
+    for (const a of apis) lines.push(`| ${a.method} | \`${a.path}\` | ${a.fn} | ${a.file} |`);
+    lines.push('');
+    lines.push('## 鉴权');
+    lines.push('所有接口经 `SupplierInfoInterceptor`：从 token 提取 supplierCode → 注入转发请求 header');
 
-      const body = lines.join('\n');
-      writeDocument(path.join(kbDir, 'api-mapping.md'), createFrontmatter({
-        kb_layer: 'contracts', summary: `网关转发映射，${apis.length} 个接口`, sources: [], commit, body
-      }), body);
-      console.log(`  api-mapping: ${apis.length} 个接口`);
-    }
+    const body = lines.join('\n');
+    writeDocument(path.join(kbDir, 'api-mapping.md'), createFrontmatter({
+      kb_layer: 'contracts', summary: `网关转发映射，${apis.length} 个接口`, sources: [], commit, body
+    }), body);
+    console.log(`  api-mapping: ${apis.length} 个接口`);
   }
 }
 
@@ -709,6 +765,111 @@ function getCommit(sourceDir) {
   } catch (e) {
     return 'unknown';
   }
+}
+
+function autoDetectModules(sourceDir) {
+  const modules = [];
+
+  // 1. 尝试从 settings.gradle 解析
+  const settingsGradle = path.join(sourceDir, 'settings.gradle');
+  const settingsGradleKts = path.join(sourceDir, 'settings.gradle.kts');
+  const settingsFile = fs.existsSync(settingsGradle) ? settingsGradle : (fs.existsSync(settingsGradleKts) ? settingsGradleKts : null);
+
+  if (settingsFile) {
+    const content = fs.readFileSync(settingsFile, 'utf-8');
+    const includeRegex = /include\s*\(?['"]([^'"]+)['"]/g;
+    let match;
+    while ((match = includeRegex.exec(content)) !== null) {
+      const modPath = match[1].replace(/:/g, '/');
+      const modName = modPath.split('/').pop();
+      // 跳过 common/infra/test 等非业务模块
+      if (['pur-common', 'pur-infra', 'pur-test', 'pur-web'].includes(modName)) continue;
+      const fullPath = path.join(sourceDir, modPath, 'src/main/java');
+      if (fs.existsSync(fullPath)) {
+        modules.push({ name: modName, path: `${modPath}/src/main/java` });
+      }
+    }
+  }
+
+  // 2. 回退：扫 app/ 目录
+  if (modules.length === 0) {
+    const appDir = path.join(sourceDir, 'app');
+    if (fs.existsSync(appDir)) {
+      for (const entry of fs.readdirSync(appDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (['pur-common', 'pur-infra', 'pur-test', 'pur-web'].includes(entry.name)) continue;
+        const javaDir = path.join(appDir, entry.name, 'src/main/java');
+        if (fs.existsSync(javaDir)) {
+          modules.push({ name: entry.name, path: `app/${entry.name}/src/main/java` });
+        }
+      }
+    }
+  }
+
+  return modules;
+}
+
+function findDir(sourceDir, moduleName, dirNames) {
+  // 在模块的 java 源码目录下递归找匹配的目录名
+  const moduleBase = path.join(sourceDir, 'app', moduleName, 'src/main/java');
+  if (!fs.existsSync(moduleBase)) return null;
+
+  let found = null;
+  function walk(dir, depth) {
+    if (depth > 6 || found) return;
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (dirNames.includes(entry.name)) {
+          found = path.join(dir, entry.name);
+          return;
+        }
+        walk(path.join(dir, entry.name), depth + 1);
+      }
+    } catch (e) {}
+  }
+  walk(moduleBase, 0);
+  return found;
+}
+
+function autoDetectReactApps(sourceDir) {
+  const apps = [];
+
+  // 1. 检查 apps/ 目录（monorepo）
+  const appsDir = path.join(sourceDir, 'apps');
+  if (fs.existsSync(appsDir)) {
+    for (const entry of fs.readdirSync(appsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const pkgJson = path.join(appsDir, entry.name, 'package.json');
+      if (fs.existsSync(pkgJson)) {
+        apps.push({ name: entry.name, path: `apps/${entry.name}`, role: 'default' });
+      }
+    }
+  }
+
+  // 2. 检查 packages/ 目录
+  if (apps.length === 0) {
+    const pkgsDir = path.join(sourceDir, 'packages');
+    if (fs.existsSync(pkgsDir)) {
+      for (const entry of fs.readdirSync(pkgsDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const srcDir = path.join(pkgsDir, entry.name, 'src');
+        if (fs.existsSync(srcDir)) {
+          apps.push({ name: entry.name, path: `packages/${entry.name}`, role: 'default' });
+        }
+      }
+    }
+  }
+
+  // 3. 单应用（根目录有 src/）
+  if (apps.length === 0 && fs.existsSync(path.join(sourceDir, 'src'))) {
+    const pkg = fs.existsSync(path.join(sourceDir, 'package.json'))
+      ? JSON.parse(fs.readFileSync(path.join(sourceDir, 'package.json'), 'utf-8'))
+      : { name: path.basename(sourceDir) };
+    apps.push({ name: pkg.name || path.basename(sourceDir), path: '.', role: 'default' });
+  }
+
+  return apps;
 }
 
 function findJavaFilesRecursive(dir) {
