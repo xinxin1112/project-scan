@@ -362,34 +362,72 @@ scripts/
 └── state.js                    ← .scan-state.json v2
 ```
 
-### 下次session要做的事：Skill化
+### Skill 化（已完成）
 
-当前所有能力都是"手动跑脚本"，需要集成到 `/project-scan` skill 里变成一条命令。
+~~当前所有能力都是"手动跑脚本"，需要集成到 `/project-scan` skill 里变成一条命令。~~
 
-**需要做的**：
+**已完成：**
 
-1. **写 `scan-config.yaml` 模板 + setup命令**
-   - 用户首次跑时交互式生成配置（项目路径、类型、分支、DB连接等）
-   - 支持多项目 + 多前端app + 网关角色
+1. ✅ **`scan-config.yaml`** — 项目配置的唯一来源（路径、分支、模块、DB、项目间关系）
+2. ✅ **`scripts/scan-all.js`** — 总入口，读配置 → 按类型分发 → 生成 → 入向量库
+   - java-spring：entity + enum + state-machine + contract + flow + method-index + error-codes + rules
+   - react：routes + api-client + api-types + stores + hermes-dict + frontend-enums + field-linkage + node-button-matrix + backend-mapping
+   - gateway：Retrofit 转发映射
+   - 跨项目：system-topology + frontend-backend-map（自动生成）
+3. ✅ **SKILL.md** — 完整执行手册（v2 子命令 + 每种项目类型的详细生成列表 + 向量库交互流程）
+4. ✅ **端到端测试** — `scan-all.js` 跑通三个项目（pur-center + srm-web + supplier-portal）
+5. ✅ **通用化策略** — MyBatis-Plus 为默认规则，config 预留 `framework` 字段，不过早抽象
 
-2. **写 `scripts/scan-all.js` 总入口**
-   - 读 scan-config.yaml
-   - 按项目类型分发：java-spring → 四层生成器；react → 前端扫描器；gateway → 转发映射
-   - 跨项目：生成 topology + mapping + consistency report
-   - 全部入向量库
+### Grill check（设计一致性校验）
 
-3. **改 SKILL.md 编排逻辑**
-   - `/project-scan` → scan-all.js（全量）
-   - `/project-scan update` → incremental.js（增量）+ 层次2 LM调用
-   - `/project-scan search <query>` → unified-search.js
-   - `/project-scan check` → freshness.js（交互式）
+session 末尾用 `/grill-with-docs` 做了设计一致性检查，发现并修复了 10 个偏差：
 
-4. **端到端测试**
-   - 删掉现有 KB → 跑 `/project-scan` → 验证全部重建
-   - 改一个文件 → 跑 `/project-scan update` → 验证增量
-   - 跑 `/project-scan search "确认对账单"` → 验证跨项目搜索
+| # | 问题 | 处理 |
+|---|------|------|
+| 1 | KB 物理位置变了（不在 git 仓库） | CONTEXT.md 决策 12 更新 |
+| 2 | 多项目是新概念 | CONTEXT.md 术语段加 Project |
+| 3 | 前端扫描超出"降级模式" | ADR 0005 更新：React 有专属文档类型集 |
+| 4 | scan-config.yaml 是新核心 | CONTEXT.md 加决策 |
+| 5 | 跨项目串联是新能力 | CONTEXT.md 加决策 |
+| 6 | CLAUDE.md 补丁已废弃 | CONTEXT.md 决策 31 改为"不再修补" |
+| 7 | 向量库每项目一个 | 不需要改（已在 #5 覆盖） |
+| 8 | 层次 2 flow 是新能力 | CONTEXT.md 加决策 |
+| 9 | error-codes 归属 | 不需要改（归 domain 层合理） |
+| 10 | 通用化策略 | 保持 MyBatis-Plus 默认，不改脚本 |
 
-5. **通用化**
-   - scan-config.yaml 支持不同框架（JPA / WebFlux / Go / Python）的路由规则
-   - 前端支持 Vue（当前只支持 React）
-   - DB连接信息从环境变量读，不硬编码
+### GitHub 推送记录
+
+```
+仓库: github.com:xinxin1112/project-scan (main)
+版本: 2.0.0
+
+提交历史（本次 session）：
+  4bcc2d3 docs: add install and update commands to README
+  b5d5953 feat: add vector store interactive setup flow in SKILL.md
+  cd1b644 docs: sync CONTEXT.md and ADR 0005 with actual implementation
+  3858873 feat: complete scan-all.js with full frontend scanning + cross-project generation
+  82c999b feat: v2.0.0 — structured KB generation with multi-project support
+```
+
+### 安装与更新
+
+```bash
+# 安装
+git clone git@github.com:xinxin1112/project-scan.git ~/.claude/skills/project-scan
+cd ~/.claude/skills/project-scan && npm install
+ollama pull bge-m3  # 可选，用于向量搜索
+
+# 更新
+cd ~/.claude/skills/project-scan && git pull origin main && npm install
+
+# 重建向量库（模型更新后）
+/project-scan reindex
+```
+
+### 下次 session 可做的事
+
+1. **通用化脚本** — 当有第二个非 MyBatis-Plus 项目时，把注解识别规则从脚本里抽到 config
+2. **Vue 前端支持** — 类似 React 的文档类型集，适配 Vue 的 router/store/composables
+3. **层次 2 flow 自动化** — 接 Claude API 或本地 Ollama qwen2.5，实现 `--auto-lm` 的完整闭环
+4. **pur-center 全模块回归** — 扫 pur-center 所有模块（不只是 pur-reconcile），验证跨模块 inbound contract
+5. **setup 交互式命令** — `/project-scan setup` 引导用户生成 scan-config.yaml
