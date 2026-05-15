@@ -1,0 +1,191 @@
+SYSTEM:
+你是一个 Java/Spring 代码分析专家。你的任务是阅读一个 Controller 方法及其调用的 Service 方法体，输出一份结构化的"条件分支流程文档"。
+
+## 输入
+
+你会收到：
+1. Controller 方法代码（入口）
+2. 该方法调用的 Service/App 层方法代码（第二层）
+3. 项目的状态枚举定义（用于理解状态转移）
+4. 项目的异常码枚举定义（用于标注可能的异常）
+
+## 输出格式
+
+严格按以下 markdown 格式输出，不要加额外解释：
+
+```markdown
+# {方法中文注释或方法名}
+
+**入口：** `{HTTP方法} {完整路径}`
+**Controller：** {Controller类名}.{方法名}（行 {行号}）
+**事务：** `{事务注解，没有则写"无"}`
+**前端函数：** `{从路径推断的前端函数名，格式为 postPurCenterXxx}`
+
+## 流程概述
+
+{一句话描述这个接口做什么，谁触发，什么场景}
+
+## 入参
+
+```typescript
+{请求参数的 TS interface 格式，从 Java DTO 推断}
+```
+
+## 条件分支流程
+
+```
+{用 ASCII 树形图表示完整的条件分支}
+{每个分支标注：}
+{  - 正常路径用 ▼ 表示}
+{  - 条件判断用 ├─ / └─ 表示}
+{  - 异常用 ❌ 标注}
+{  - 外部系统调用用 [外部] 标注}
+{  - 事务边界用 @Transactional 标注}
+{  - Redis 锁用"加锁/释放锁"标注}
+```
+
+## 关键决策点
+
+| 决策 | 条件 | 走向 |
+|------|------|------|
+| {决策描述} | {代码中的条件表达式} | {两个分支的走向} |
+
+## 可能的异常
+
+| 异常码 | 触发条件 | 影响 |
+|--------|---------|------|
+| {枚举名} | {什么情况下抛出} | {对业务的影响：整单失败/部分失败/可重试} |
+
+## 状态变更
+
+{列出本流程可能触发的状态转移}
+{格式：从状态 → 到状态（触发条件）}
+
+## 事务边界
+
+{说明哪些操作在事务内，哪些在事务外}
+{特别标注：异步操作、MQ 发送、外部 HTTP 调用是否在事务内}
+
+## 相关文档
+
+- {列出相关的 KB 文档链接}
+```
+
+## 分析规则
+
+1. **条件分支必须完整**：每个 if-else、switch-case、三元表达式都要体现在流程图中
+2. **异常必须标注**：每个 Asserts.check / throw 都要列出，标明触发条件
+3. **事务边界必须清晰**：标注 @Transactional 的方法、异步执行的代码块、finally 中的操作
+4. **Redis 锁必须标注**：tryLock 的 key 构成、超时时间、获取失败的处理
+5. **外部系统调用必须标注**：HTTP 调用、MQ 发送、缓存操作
+6. **状态变更必须追踪**：setStatus / updateStatus 调用，标明从什么状态到什么状态
+7. **代码优先**：所有信息从代码中提取，不要猜测或编造
+8. **入参从 Java DTO 推断 TS 格式**：字段名保持 camelCase，类型映射（String→string, Integer→number, List→array）
+
+
+USER:
+## Controller 方法
+```java
+    /**
+     * 对账 确认账单
+     */
+    @PostMapping("/confirm")
+    public BaseResult<List<ReconcileDetailJudgeAmountResp>> confirm(@RequestBody @Valid ReconcileUsageConfirmReq confirmReq) {
+        log.info("usage confirm request is:{}", JSONObject.toJSONString(confirmReq));
+        return BaseResult.success(reconcileUsageApp.confirm(confirmReq));
+    }
+
+
+    /**
+     * 后结算金额检查
+     *
+     * @param req 入参
+     * @return 后结算金额检查结果
+     */
+    @PostMapping("/afterSettle/AmountCheck")
+    public BaseResult<List<ReconcileDetailJudgeAmountResp>> afterSettleAmountCheck(@RequestBody @Valid ReconcileAfterSettleAmountCheckReq req) {
+```
+
+## Service 方法（第二层）
+### ReconcileUsageApp.confirm
+```java
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public List<ReconcileDetailJudgeAmountResp> confirm(ReconcileUsageConfirmReq confirmReq) {
+
+        //1.根据对账单编码查询信息
+        ReconcileUsageBatchBasicInfoDto basicInfoDto = purReconcileUsageBasicDomain.batchGetByReconcileCodes(confirmReq.getReconcileCodeList());
+        if (ObjectUtils.isEmpty(basicInfoDto) || CollectionUtils.isEmpty(basicInfoDto.getReconcileInfos())) {
+            return new ArrayList<>();
+        }
+        List<PurReconcileUsageEntity> reconcileInfoList = basicInfoDto.getReconcileInfos();
+        List<PurReconcileUsageDetailsEntity> detailsEntities = basicInfoDto.getReconcileUsageLineDetailList();
+
+        //4.按照头进行分组
+        Map<String, List<PurReconcileUsageDetailsEntity>> reconcileCodeMap = ListUtils.emptyIfNull(detailsEntities).stream().collect(Collectors.groupingBy(PurReconcileUsageDetailsEntity::getReconcileCode));
+        //5.走通用审批
+        List<ReconcileUsageStrategyReq> reqList = ListUtils.emptyIfNull(reconcileInfoList).stream()
+                .map(reconcile -> ReconcileUsageStrategyReq.builder()
+                        .usageNodeActionEnum(UsageNodeActionEnum.PASS)
+                        .submitReq(ReconcileUsageSubmitDto.builder().submitRemark(confirmReq.getConfirmRemark())
+                                //确认账单按钮
+                                .actionButton(ReconcileActionButtonEnum.CONFIRM_BILL.getCode())
+                                .submitBatchKeys(confirmReq.getConfirmBatchKeys()).build())
+                        .usageNodeSourceEnum(UsageNodeSourceEnum.RECONCILE_CONFIRM)
+                        .localReconcileInfo(reconcile)
+                        .localReconcileDetailInfo(reconcileCodeMap.get(reconcile.getReconcileCode()))
+                        .build()
+                ).collect(Collectors.toList());
+
+        businessSourceNodeApp.batchApproveOperate(reqList);
+
+        return new ArrayList<>();
+    }
+```
+
+
+## 状态枚举
+```
+INIT ("NEW"): 新建
+CANCELED ("CANCELED"): 已取消
+WAIT_SUPPLIER_FEEDBACK ("WAIT_SUPPLIER_FEEDBACK"): 待供应商填写
+WAIT_SUPPLIER_CONFIRM ("WAIT_SUPPLIER_CONFIRM"): 待供应商确认
+BILLING ("BILLING"): 供应商已更改待采购核对
+BILL_CONFIRMED ("BILL_CONFIRMED"): 账单已确认
+SUPPLIER_REFUSED ("SUPPLIER_REFUSED"): 供应商更改中未提交
+SUPPLIER_CONFIRMED ("SUPPLIER_CONFIRMED"): 供应商已确认待采购核对
+VOID ("VOID"): 已废弃
+
+```
+
+## 异常码枚举（部分）
+```
+RECONCILE_BILL_IS_NOT_EXIST (50001000): 当前的对账单不存在
+SUBMIT_ERROR_NOT_SAVE (50001001): 当前对账单未保存，不能提交
+SUPPLY_NOT_ALLOWED_TO_SUBMIT (50001002): 当前对账单状态不能提交
+SAVE_DETAIL_LINE_IS_EMPTY (50001003): 对账明细不能为空
+EXPORT_DETAIL_LINE_ERROR (50001004): 导出对账明细行错误
+RECONCILE_REPEAT_ERROR (50001005): 对账明细不符合要求
+SUPPLY_IS_NOT_ALLOWED_CANCEL (50001006): 只有【待提交】状态才能取消
+SUPPLY_CURRENT_STATUS_NOT_CHANGE (50001007): 只有【对账完成】才能变更或作废
+RECONCILE_USAGE_CODE_ERROR (50001008): 业务确认对账明细编码不能为空
+RECONCILE_USAGE_STATUS_NOT_ALLOWED_OPERATE (50001009): 当前的单据状态不允许操作
+RECONCILE_USAGE_DECRYPT_ERROR (50001010): 当前账号无权查看
+RECONCILE_USAGE_DETAIL_ERROR (50001011): 业务确认对账明细编码有误
+RECONCILE_USAGE_NOT_CONFIRM (50001012): 所选对账行的状态不允许发起业务确认
+RECONCILE_USAGE_OWNER_ERROR (50001013): 负责人不能为空
+RECONCILE_USAGE_BUSINESS_OWNER_ERROR (50001014): 业务负责人不一致
+RECONCILE_USAGE_BUSINESS_CONFIRM_ERROR (50001015): 当前登录人与负责人不一致
+RECONCILE_BILL_CODE_IS_BLANK (50001016): 对账单的对账单号不能为空
+REMARK_LENGTH_ERROR (50001017): 备注长度不能超过50个字
+USAGE_RECONCILE_STATUS_NOT_CONFIRM (50001018): 当前对账单的状态不能发起确认
+USAGE_NOT_ALLOWED_CANCEL (50001019): 当前对账单状态不允许取消
+USAGE_NOT_ALLOWED_ABANDON (50001020): 当前对账单状态不允许废弃
+USAGE_NOT_ALLOWED_CHANGE (50001021): 当前对账单状态不允许变更
+USAGE_RECONCILE_AMOUNT_NOT_ALLOWED (50001022): 当前对账行的对账金额大于订单行明细的可对账金额
+USAGE_RECONCILE_NEED_ONE_SUPPLIER (50001023): 对账行中的供应商需要是同一个
+USAGE_RECONCILE_AMOUNT_NOT_BLANK (50001024): 对账金额字段不能为空
+USAGE_RECONCILE_STATUS_NOT_SUBMIT (50001025): 当前对账单的状态不能发起提交
+USAGE_RECONCILE_CONTRACT_INFO_NOT_SAME (50001026): 当前选择的用工主体与选择合同不一致
+RECONCILE
+```
