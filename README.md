@@ -139,13 +139,13 @@ cd ~/.claude/skills/project-scan && npm install
 ## 安装
 
 ```bash
-# 克隆到 Claude Code skills 目录
+# 1. 克隆到 Claude Code skills 目录
 git clone git@github.com:xinxin1112/project-scan.git ~/.claude/skills/project-scan
 
-# 安装 Node 依赖
+# 2. 安装 Node 依赖
 cd ~/.claude/skills/project-scan && npm install
 
-# 安装 embedding 模型（可选，用于向量搜索）
+# 3. 安装 embedding 模型（可选，用于向量搜索）
 ollama pull bge-m3
 ```
 
