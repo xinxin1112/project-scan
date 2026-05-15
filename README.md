@@ -136,6 +136,34 @@ cd ~/.claude/skills/project-scan && npm install
 /project-scan search "下拉选项" --project=srm-web
 ```
 
+## 安装
+
+```bash
+# 克隆到 Claude Code skills 目录
+git clone git@github.com:xinxin1112/project-scan.git ~/.claude/skills/project-scan
+
+# 安装 Node 依赖
+cd ~/.claude/skills/project-scan && npm install
+
+# 安装 embedding 模型（可选，用于向量搜索）
+ollama pull bge-m3
+```
+
+安装完成后，在任意项目目录下运行 `/project-scan` 即可使用。
+
+## 更新
+
+```bash
+cd ~/.claude/skills/project-scan && git pull origin main && npm install
+```
+
+如果 embedding 模型有更新：
+
+```bash
+ollama pull bge-m3
+/project-scan reindex  # 重建向量库
+```
+
 ## 设计文档
 
 - `CONTEXT.md` — 锁定的设计决策
