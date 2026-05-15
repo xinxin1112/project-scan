@@ -21,6 +21,35 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 
 **重要**：当 `scan-config.yaml` 不存在时，不走 v1 兼容模式，直接进入 v2 setup 引导。
 
+## `/project-scan` 全量扫描完整流程（必须按顺序执行）
+
+当用户跑 `/project-scan`（无参数）时，按以下步骤**顺序执行**，每一步都不能跳过：
+
+### Step 1 — 执行 scan-all.js
+```bash
+cd <skill-dir> && node scripts/scan-all.js <config-path>
+```
+如果超时，KB 文档已生成，继续下一步。
+
+### Step 2 — 检查向量库是否构建完成
+```bash
+ls <output_dir>/<project>/.vector-store/meta.json
+```
+如果不存在或 chunk_count 为 0，询问用户是否构建（见下方"向量库配置"段）。
+
+### Step 3 — 询问是否执行层次 2
+**无论向量库是否构建，都要问这一步。** 见下方"层次 2 引导"段。
+
+### Step 4 — 输出扫描摘要
+```
+扫描完成：
+  - pur-center: X 份文档，Y 个模块
+  - srm-web: X 份文档，Y 个 app
+  - supplier-portal: X 份文档
+  - 向量库: 已构建 / 未构建
+  - 层次 2: 已执行 / 跳过
+```
+
 ## v2 子命令
 
 | 命令 | 说明 | 脚本 |
