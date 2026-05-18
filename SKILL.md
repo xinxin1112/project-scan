@@ -631,38 +631,46 @@ node scripts/unified-search.js "查询内容" [--project=pur-center] [--top=10]
 
 ## 多分支支持
 
-同一个 `scan-config.yaml`，同一个 `.sources/` git clone，通过切分支支持多环境：
+同一个 `scan-config.yaml`，通过 **git worktree** 支持多分支（每个分支独立目录，图谱不互相覆盖）：
 
 ```
-/project-scan                    ← 询问分支后执行
-/project-scan update             ← 更新当前分支（上次扫描的分支）
-/project-scan search "xxx" --branch=develop  ← 搜索指定分支的知识库
-/project-scan graph --impact=X --branch=release_prod  ← 指定分支的图谱
+/project-scan                    ← 询问操作后执行
+/project-scan update             ← 更新（单分支直接跑，多分支让用户选）
+/project-scan search "xxx" --branch=test  ← 搜索指定分支的知识库
+/project-scan graph --impact=X --branch=prod  ← 指定分支的图谱
 ```
 
-物理结构：
+物理结构（使用 git worktree）：
 ```
 <output_dir>/
 ├── scan-config.yaml
 ├── .sources/
-│   ├── pur-center/              ← 一个 git clone，按需切分支
-│   ├── srm-web/
-│   └── supplier-portal/
+│   ├── pur-center/              ← release_prod（主 worktree）
+│   │   └── .gitnexus/          ← prod 图谱
+│   ├── pur-center-test/         ← develop（worktree）
+│   │   └── .gitnexus/          ← test 图谱
+│   ├── srm-web/                 ← release（主 worktree）
+│   ├── srm-web-test/            ← uat（worktree）
+│   ├── supplier-portal/         ← main（主 worktree）
+│   └── supplier-portal-test/    ← develop（worktree）
 ├── pur-center/
-│   ├── release_prod/kb/         ← 生产分支 KB
-│   ├── release_prod/.vector-store/
-│   ├── develop/kb/              ← 测试分支 KB
-│   ├── develop/.vector-store/
-│   └── prd/                     ← 跨分支共享
+│   ├── prod/kb/ + .vector-store/
+│   └── test/kb/ + .vector-store/
 ├── srm-web/
-│   ├── release/kb/
-│   └── develop/kb/
+│   ├── prod/kb/ + .vector-store/
+│   └── test/kb/ + .vector-store/
 └── supplier-portal/
-    ├── main/kb/
-    └── develop/kb/
+    ├── prod/kb/ + .vector-store/
+    └── test/kb/ + .vector-store/
 ```
 
-`.scan-state.json` 记录上次扫描的分支，`/project-scan update` 默认更新该分支。
+构建新分支时自动创建 worktree：
+```bash
+cd .sources/<project>
+git worktree add ../<project>-<env> <branch>
+```
+
+scan-all.js 的 `--branch=test` 会读 `.sources/<project>-test/` 作为源码路径。
 
 ## 知识库物理位置
 

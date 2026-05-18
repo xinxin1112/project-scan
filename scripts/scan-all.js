@@ -62,18 +62,33 @@ async function scanAll(configPath) {
     ? config.branches[branchKey]
     : null;
 
-  // 如果指定了 --branch 且有 branchMap，先切换各项目的 git 分支
+  // 如果指定了 --branch 且有 branchMap，使用 worktree 路径作为源码目录
   if (branchMap) {
-    console.log(`\n--- 切换到 "${branchKey}" 环境分支 ---\n`);
+    console.log(`\n--- 使用 "${branchKey}" 环境分支 ---\n`);
     for (const project of validProjects) {
       const targetBranch = branchMap[project.name];
       if (!targetBranch) continue;
-      const sourcePath = project.source || path.join(outputDir, '.sources', project.name);
-      try {
-        execSync(`git fetch origin ${targetBranch} --depth=1 2>/dev/null; git checkout ${targetBranch} 2>/dev/null; git pull origin ${targetBranch} 2>/dev/null`, { cwd: sourcePath, stdio: 'pipe' });
-        console.log(`  [${project.name}] → ${targetBranch} ✓`);
-      } catch (e) {
-        console.log(`  [${project.name}] → ${targetBranch} ✗ (${e.message.substring(0, 50)})`);
+      // worktree 路径：.sources/<project>-<branchKey>
+      const worktreePath = path.join(outputDir, '.sources', `${project.name}-${branchKey}`);
+      if (fs.existsSync(worktreePath)) {
+        project.source = worktreePath;
+        console.log(`  [${project.name}] → ${worktreePath} (worktree: ${targetBranch}) ✓`);
+      } else {
+        // worktree 不存在，尝试创建
+        const mainPath = project.source || path.join(outputDir, '.sources', project.name);
+        try {
+          execSync(`git worktree add "${worktreePath}" ${targetBranch}`, { cwd: mainPath, stdio: 'pipe' });
+          project.source = worktreePath;
+          console.log(`  [${project.name}] → 创建 worktree (${targetBranch}) ✓`);
+        } catch (e) {
+          // worktree 创建失败，回退到 checkout
+          try {
+            execSync(`git fetch origin ${targetBranch} 2>/dev/null; git checkout ${targetBranch} 2>/dev/null; git pull origin ${targetBranch} 2>/dev/null`, { cwd: mainPath, stdio: 'pipe' });
+            console.log(`  [${project.name}] → checkout ${targetBranch} ✓ (worktree 创建失败，回退)`);
+          } catch (e2) {
+            console.log(`  [${project.name}] → ${targetBranch} ✗ (${e2.message.substring(0, 50)})`);
+          }
+        }
       }
     }
   }
