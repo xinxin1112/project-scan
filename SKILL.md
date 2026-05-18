@@ -10,20 +10,49 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 ## 版本分发
 
 ```
-检测 scan-config.yaml 是否存在？（优先检查 output_dir，其次当前目录）
+解析 --env 参数 → 确定配置文件路径：
+  --env=X → scan-config.X.yaml
+  无 --env → scan-config.yaml
+
+检测配置文件是否存在？
 ├── 存在 → v2 模式（按子命令分发）
 │     ├── 无参数 → 全量扫描（scan-all.js）
 │     ├── update → 增量更新
 │     ├── search → 统一搜索
-│     └── ...
-└── 不存在 → 进入 setup 交互流程（生成 scan-config.yaml）
+│     ├── graph → 图谱操作
+│     ├── level2 → 层次 2 生成
+│     └── setup → 重新配置
+└── 不存在 → 进入 setup 交互流程（生成 scan-config.yaml 或 scan-config.X.yaml）
 ```
 
 **重要**：当 `scan-config.yaml` 不存在时，不走 v1 兼容模式，直接进入 v2 setup 引导。
 
 ## `/project-scan` 全量扫描完整流程（必须按顺序执行）
 
-当用户跑 `/project-scan`（无参数）时，按以下步骤**顺序执行**，每一步都不能跳过：
+当用户跑 `/project-scan`（无参数或带 `--env`）时，按以下步骤**顺序执行**，每一步都不能跳过：
+
+### Step 0 — 环境检测与配置文件定位
+
+```
+解析 --env 参数：
+├── 有 --env=X → 找 scan-config.X.yaml
+├── 无 --env → 找 scan-config.yaml
+└── 都不存在 → 进入 setup 引导
+```
+
+如果是首次跑某个环境（对应的 output_dir 为空），询问用户：
+```
+检测到环境 "{env}" 尚未初始化。
+
+配置文件：scan-config.{env}.yaml
+输出目录：{output_dir}
+分支：{branch}
+数据库：{db_host}:{db_port}
+
+确认开始全量扫描？(y/n)
+```
+
+STOP 等待用户确认。
 
 ### Step 1 — 执行 scan-all.js（KB 生成，层次 1）
 ```bash
