@@ -126,22 +126,32 @@ if (require.main === module) {
   let type = null;
   let topK = DEFAULT_TOP_K;
   let dir = process.cwd();
+  let branch = 'prod';
+  let project = null;
 
   for (const arg of args) {
     if (arg.startsWith('--type=')) type = arg.split('=')[1];
     else if (arg.startsWith('--top=')) topK = parseInt(arg.split('=')[1]);
     else if (arg.startsWith('--dir=')) dir = arg.split('=')[1];
+    else if (arg.startsWith('--branch=')) branch = arg.split('=')[1];
+    else if (arg.startsWith('--project=')) project = arg.split('=')[1];
     else query += (query ? ' ' : '') + arg;
   }
 
   if (!query) {
-    console.error('Usage: vector-search.js <query> [--type=code|business] [--top=5] [--dir=path]');
+    console.error('Usage: vector-search.js <query> [--project=pur-center] [--branch=prod|test] [--type=code|business] [--top=5] [--dir=path]');
     process.exit(1);
+  }
+
+  // 如果指定了 project，自动拼向量库路径
+  if (project && !args.some(a => a.startsWith('--dir='))) {
+    const outputDir = '/Users/a6667/bilibili/project-scan';
+    dir = path.join(outputDir, project, branch);
   }
 
   const vectorStore = findVectorStore(dir);
   if (!vectorStore) {
-    console.error('No vector store found. Run /project-scan first to generate a knowledge base with vector index.');
+    console.error(`No vector store found at ${dir}/.vector-store/. Run /project-scan first.`);
     process.exit(1);
   }
 
