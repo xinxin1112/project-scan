@@ -433,7 +433,7 @@ cd ~/.claude/skills/project-scan && git pull origin main && npm install
 5. **setup 交互式命令** — `/project-scan setup` 引导用户生成 scan-config.yaml
 6. **GitNexus 知识图谱集成** — 影响分析层
    - 安装 GitNexus，跑 benchmark（全量索引 pur-center + srm-web + supplier-portal 各要多久）
-   - 写 `scripts/graph-index.js`（调 GitNexus 索引 3 个项目，数据存 `<project>/.graph/`）
+   - 写 `scripts/graph-index.js`（调 GitNexus 索引 3 个项目，数据存 `.sources/<project>/.gitnexus/`）
    - 写 `scripts/graph-query.js`（影响分析：输入方法名 → 输出所有调用方 + 受影响页面）
    - SKILL.md 加子命令：`/project-scan graph`、`/project-scan graph --impact=X`、`/project-scan graph --web`
    - 决定更新策略：如果全量 < 2 分钟 → 绑定到 `/project-scan update`；> 10 分钟 → 独立按需
