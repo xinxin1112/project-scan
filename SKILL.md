@@ -512,7 +512,14 @@ STOP 等待用户回复。
 - **不要切分支**，直接读对应 worktree 目录的源码
 
 从 scan-config.yaml 的 `flow_level2.core_methods` 读取核心方法列表。
-如果没有配置，自动检测：对每个有 Controller 的模块，从已生成的 flow 文档中找调用链最长 + 有状态转移的 **top-2** 方法（预计 15-20 个方法）。
+如果没有配置，自动检测：对每个有 Controller 的模块，从已生成的 flow 文档中选 **top-2** 最复杂的方法。复杂度判定（满足任一即可）：
+- 调用了 ≥3 个不同的 Service/Client
+- 有状态转移（setStatus/updateStatus）
+- 有事务注解（@Transactional）
+- 调用链深度 ≥ 3 层
+- 方法体行数 ≥ 50 行
+
+如果某个模块没有满足条件的方法，选调用链最长的 top-1。确保每个有 Controller 的模块至少有 1 个方法被选中。
 
 对每个核心方法：
 1. 读取 Controller + Service 源码（从对应环境的 worktree 路径读）
