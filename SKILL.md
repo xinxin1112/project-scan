@@ -549,7 +549,22 @@ gitnexus cypher -r <project> "
 
 **源码路径同上**：读对应环境的 worktree 目录，不切分支。
 
-自动检测核心表单组件：对每个有 `pages/` 目录的前端 app，找文件最大 + 含 `Form`/`Editor`/`FooterContent`/`Drawer`/`Modal` 的 **top-2** 组件（预计 8-12 个组件）。
+**通过 GitNexus 图谱快速检测前端核心组件**（< 1 秒）：
+
+```bash
+gitnexus cypher -r <frontend-project> "
+  MATCH (f:Function)
+  WHERE f.filePath CONTAINS '/pages/' OR f.filePath CONTAINS '/Components/'
+  WITH f
+  MATCH (f)-[call:CodeRelation {type: 'CALLS'}]->(target)
+  WITH f, count(DISTINCT target) as callCount
+  WHERE callCount >= 5
+  RETURN f.name, f.filePath, callCount
+  ORDER BY callCount DESC
+"
+```
+
+按 app 分组取 top-2。如果 GitNexus 不可用，回退到文件大小检测（找 `pages/` 目录中文件最大 + 含 `Form`/`Editor`/`FooterContent`/`Drawer`/`Modal` 的 top-2 组件）。
 
 对每个核心组件：
 1. 读取组件完整源码（含关联的 hooks/constants）
