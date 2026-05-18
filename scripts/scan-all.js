@@ -609,10 +609,13 @@ function generateCrossProjectDocs(config, outputDir) {
   const topoLines = ['# 系统拓扑', ''];
   topoLines.push('```');
   for (const rel of (config.relations || [])) {
-    if (rel.via === 'direct') {
-      topoLines.push(`${rel.from} ──直连──▶ ${rel.to}    ${rel.description || ''}`);
+    const from = rel.app || rel.frontend;
+    const to = rel.backend;
+    const via = rel.gateway || (rel.mode === 'direct' ? '直连' : rel.mode);
+    if (via === '直连' || !rel.gateway) {
+      topoLines.push(`${from} ──直连──▶ ${to}`);
     } else {
-      topoLines.push(`${rel.from} ──▶ ${rel.via} ──▶ ${rel.to}    ${rel.description || ''}`);
+      topoLines.push(`${from} ──▶ ${via} ──▶ ${to}`);
     }
   }
   topoLines.push('```');
@@ -641,7 +644,11 @@ function generateCrossProjectDocs(config, outputDir) {
   mapLines.push('| 前端 App | 经过 | 后端项目 | 说明 |');
   mapLines.push('|---------|------|---------|------|');
   for (const rel of (config.relations || [])) {
-    mapLines.push(`| ${rel.from} | ${rel.via === 'direct' ? '直连' : rel.via} | ${rel.to} | ${rel.description || ''} |`);
+    const from = rel.app || rel.frontend;
+    const to = rel.backend;
+    const via = rel.gateway ? rel.gateway : '直连';
+    const desc = rel.exclude_apps ? `(排除: ${rel.exclude_apps.join(', ')})` : '';
+    mapLines.push(`| ${from} | ${via} | ${to} | ${desc} |`);
   }
   mapLines.push('');
   mapLines.push('> 详细的函数级映射见各前端 app 的 `backend-mapping.md`');
