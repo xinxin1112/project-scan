@@ -52,10 +52,16 @@ async function scanAll(configPath) {
   });
 
   // 并行扫描所有项目
+  // 解析 --branch 参数（按分支分目录存储 KB）
+  const branchArg = process.argv.find(a => a.startsWith('--branch='));
+  const branchOverride = branchArg ? branchArg.split('=')[1] : null;
+
   await Promise.all(validProjects.map(async (project) => {
     console.log(`\n--- 扫描 ${project.name} (${project.type}) ---\n`);
 
-    const projectOutputDir = path.join(outputDir, project.name);
+    // 确定分支名（用于目录结构）
+    const branch = branchOverride || project.branch || 'default';
+    const projectOutputDir = path.join(outputDir, project.name, branch);
     const kbDir = path.join(projectOutputDir, 'kb');
     fs.mkdirSync(kbDir, { recursive: true });
 
