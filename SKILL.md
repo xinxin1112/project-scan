@@ -778,8 +778,7 @@ scan-all.js 的 `--branch=test` 会读 `.sources/<project>-test/` 作为源码�
 │   ├── prod/kb/                       ← prod 知识库文档
 │   ├── prod/.vector-store/            ← prod 向量库
 │   ├── test/kb/                       ← test 知识库文档
-│   ├── test/.vector-store/            ← test 向量库
-│   └── prd/                           ← PRD（跨分支共享）
+│   └── test/.vector-store/            ← test 向量库
 ├── srm-web/
 │   ├── prod/kb/ + .vector-store/
 │   └── test/kb/ + .vector-store/
