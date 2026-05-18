@@ -512,14 +512,32 @@ STOP 等待用户回复。
 - **不要切分支**，直接读对应 worktree 目录的源码
 
 从 scan-config.yaml 的 `flow_level2.core_methods` 读取核心方法列表。
-如果没有配置，自动检测：对每个有 Controller 的模块，从已生成的 flow 文档中选 **top-2** 最复杂的方法。复杂度判定（满足任一即可）：
+如果没有配置，**通过 GitNexus 图谱快速检测**（< 1 秒）：
+
+```bash
+gitnexus cypher -r <project> "
+  MATCH (m:Method)
+  WHERE (m.filePath CONTAINS '/application/impl/' OR m.filePath CONTAINS '/application/')
+    AND NOT m.filePath CONTAINS '/test/'
+    AND NOT m.name CONTAINS 'get' AND NOT m.name CONTAINS 'query'
+    AND NOT m.name CONTAINS 'list' AND NOT m.name CONTAINS 'count'
+  WITH m
+  MATCH (m)-[call:CodeRelation {type: 'CALLS'}]->(target)
+  WITH m, count(DISTINCT target) as callCount
+  WHERE callCount >= 5
+  RETURN m.name, m.filePath, callCount
+  ORDER BY callCount DESC
+"
+```
+
+按模块分组取 top-2，排除纯导出/查询方法。确保每个有 Controller 的模块至少有 1 个方法被选中。
+
+如果 GitNexus 图谱不可用，回退到源码扫描（慢）：从 flow 文档中找满足以下任一条件的方法：
 - 调用了 ≥3 个不同的 Service/Client
 - 有状态转移（setStatus/updateStatus）
 - 有事务注解（@Transactional）
-- 调用链深度 ≥ 3 层（Controller → Service → 子 Service/DomainService）
-- 整条调用链的方法体总行数 ≥ 100 行（递归统计：Controller → AppService → 所有被调的 DomainService/ThirdService，累加各层方法体行数）
-
-如果某个模块没有满足条件的方法，选调用链最长的 top-1。确保每个有 Controller 的模块至少有 1 个方法被选中。
+- 调用链深度 ≥ 3 层
+- 整条调用链的方法体总行数 ≥ 100 行
 
 对每个核心方法：
 1. 读取 Controller + Service 源码（从对应环境的 worktree 路径读）
