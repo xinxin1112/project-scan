@@ -48,7 +48,7 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 请选择操作：
 1. 增量更新（更新已有项目的变更）
 2. 新增项目（添加新的后端/前端项目）
-3. 切换分支（用其他分支重新扫描）
+3. 构建新分支（为其他分支构建知识库，不影响已有的）
 4. 全量重建（删除现有 KB，从头扫描所有项目）
 ```
 
@@ -87,19 +87,33 @@ STOP 等待用户回复。
 4. 构建该项目的向量库 + 图谱
 5. 询问与已有项目的调用关系（追加到 relations）
 
-**用户选 3（切换分支）**→ 进入分支选择：
+**用户选 3（构建新分支）**→ 对每个项目分别询问分支：
 ```
-请选择要扫描的分支：
-1. release_prod（生产）
-2. develop（测试）
-3. 其他（手动输入分支名）
-```
+为以下项目指定要构建的分支（直接回车跳过该项目）：
 
+pur-center 的分支（当前已有：release_prod）：
+```
 STOP 等待用户回复。
 
-选择后：
-1. 切换 `.sources/<project>/` 的 git 分支：`git checkout <branch> && git pull origin <branch>`
-2. KB 和向量库按分支分目录存储
+```
+srm-web 的分支（当前已有：release）：
+```
+STOP 等待用户回复。
+
+```
+supplier-portal 的分支（当前已有：main）：
+```
+STOP 等待用户回复。
+
+然后对每个指定了分支的项目：
+1. `cd .sources/<project> && git fetch origin <branch> && git checkout <branch> && git pull origin <branch>`
+2. 扫描生成 KB 到 `<project>/<branch>/kb/`
+3. 构建向量库到 `<project>/<branch>/.vector-store/`
+4. GitNexus 图谱重建（因为切了分支）
+5. 完成后切回原分支（不影响已有 KB）
+
+注意：不同项目可以指定不同分支（如 pur-center 用 develop，srm-web 用 feat/new-ui）。
+回车跳过的项目不构建该分支的 KB。
 
 **用户选 4（全量重建）**→ 确认后删除现有 KB，从头执行 Step 1 ~ Step 5。
 
