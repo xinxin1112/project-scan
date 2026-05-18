@@ -799,15 +799,21 @@ cat /Users/a6667/bilibili/project-scan/scan-config.yaml
 # 向量搜索（默认 test）
 node /Users/a6667/.claude/skills/project-scan/scripts/vector-search.js "关键词" --project=pur-center --branch=test --top=5
 
-# 图谱查询（test）— 必须用路径（pur-center prod/test 同名冲突）
-gitnexus cypher -r "<root>/.sources/pur-center-test" "MATCH (n) WHERE n.name = 'XXX' RETURN n.name, n.filePath LIMIT 10"
+# 图谱查询（test）— 必须用完整路径（pur-center prod/test 同名冲突）
+gitnexus cypher -r "/Users/a6667/bilibili/project-scan/.sources/pur-center-test" "MATCH (n) WHERE n.name = 'XXX' RETURN n.name, n.filePath LIMIT 10"
 
 # 图谱查询（prod）— 可用名字
 gitnexus cypher -r pur-center "MATCH (n) WHERE n.name = 'XXX' RETURN n.name, n.filePath LIMIT 10"
 
 # grep 源码（test）
-grep -ri "关键词" <root>/.sources/pur-center-test/app/ --include="*.java" -l
+grep -ri "关键词" /Users/a6667/bilibili/project-scan/.sources/pur-center-test/app/ --include="*.java" -l
 ```
+
+**MCP 工具调用时 repo 参数**：
+- test 环境：`repo: "/Users/a6667/bilibili/project-scan/.sources/pur-center-test"`
+- prod 环境：`repo: "pur-center"`
+- srm-web test：`repo: "srm-web-test"`
+- supplier-portal test：`repo: "supplier-portal-test"`
 
 将 `<root>` 替换为 `scan-config.yaml` 中的 `output_dir` 值。
 
