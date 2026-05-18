@@ -7,7 +7,8 @@ const { parse } = require('./frontmatter');
 
 const BATCH_SIZE = 10;
 
-async function indexKb(kbDir, vectorStoreDir) {
+async function indexKb(kbDir, vectorStoreDir, options = {}) {
+  const { incremental = true } = options;
   const provider = await detectProvider();
   if (!provider) {
     console.error('无可用 embedding 模型。请安装 Ollama 并拉取 bge-m3：ollama pull bge-m3');
@@ -24,16 +25,56 @@ async function indexKb(kbDir, vectorStoreDir) {
   });
   console.log(`找到 ${mdFiles.length} 份文档`);
 
-  // 切片
+  // 增量模式：检测哪些文件变了
+  const metaPath = path.join(vectorStoreDir, 'meta.json');
+  let existingMeta = null;
+  let existingFileHashes = {};
+  let changedFiles = mdFiles; // 默认全量
+
+  if (incremental && fs.existsSync(metaPath)) {
+    existingMeta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const hashesPath = path.join(vectorStoreDir, 'file-hashes.json');
+    if (fs.existsSync(hashesPath)) {
+      existingFileHashes = JSON.parse(fs.readFileSync(hashesPath, 'utf-8'));
+    }
+
+    // 计算当前文件 hash，找出变化的
+    const currentFileHashes = {};
+    changedFiles = [];
+    for (const fp of mdFiles) {
+      const content = fs.readFileSync(fp, 'utf-8');
+      const hash = require('crypto').createHash('md5').update(content).digest('hex').slice(0, 12);
+      const relativePath = path.relative(kbDir, fp);
+      currentFileHashes[relativePath] = hash;
+      if (existingFileHashes[relativePath] !== hash) {
+        changedFiles.push(fp);
+      }
+    }
+
+    // 检测被删除的文件
+    const currentRelPaths = new Set(mdFiles.map(fp => path.relative(kbDir, fp)));
+    const deletedFiles = Object.keys(existingFileHashes).filter(p => !currentRelPaths.has(p));
+
+    if (changedFiles.length === 0 && deletedFiles.length === 0) {
+      console.log('\n✓ 向量库已是最新，无需更新');
+      return;
+    }
+
+    console.log(`增量更新: ${changedFiles.length} 份变更, ${deletedFiles.length} 份删除`);
+
+    // 保存当前 hash
+    existingFileHashes = currentFileHashes;
+  }
+
+  // 切片（只处理变化的文件）
   const chunks = [];
-  for (const fp of mdFiles) {
+  for (const fp of changedFiles) {
     const content = fs.readFileSync(fp, 'utf-8');
     const doc = parse(content);
     const relativePath = path.relative(kbDir, fp);
     const kbLayer = doc.frontmatter?.kb_layer || 'unknown';
     const summary = doc.frontmatter?.summary || '';
 
-    // 按 ## 标题切分
     const sections = splitByHeadings(doc.body);
     for (const section of sections) {
       if (section.text.trim().length < 20) continue;
@@ -48,6 +89,11 @@ async function indexKb(kbDir, vectorStoreDir) {
     }
   }
   console.log(`切片数: ${chunks.length}`);
+
+  if (chunks.length === 0 && !incremental) {
+    console.log('无内容可索引');
+    return;
+  }
 
   // 批量 embedding
   console.log('正在生成 embedding...');
@@ -81,25 +127,67 @@ async function indexKb(kbDir, vectorStoreDir) {
   }));
 
   if (tableNames.includes('kb')) {
-    await db.dropTable('kb');
+    if (incremental && existingMeta) {
+      // 增量：删除变化文件的旧 chunk，追加新 chunk
+      const table = await db.openTable('kb');
+      const changedRelPaths = changedFiles.map(fp => path.relative(kbDir, fp));
+      for (const relPath of changedRelPaths) {
+        try {
+          await table.delete(`file_path = '${relPath}'`);
+        } catch (e) {
+          // 文件可能是新增的，没有旧 chunk
+        }
+      }
+      // 删除已删除文件的 chunk
+      const currentRelPaths = new Set(mdFiles.map(fp => path.relative(kbDir, fp)));
+      for (const oldPath of Object.keys(existingFileHashes)) {
+        if (!currentRelPaths.has(oldPath)) {
+          try {
+            await table.delete(`file_path = '${oldPath}'`);
+          } catch (e) {}
+        }
+      }
+      // 追加新 chunk
+      if (data.length > 0) {
+        await table.add(data);
+      }
+    } else {
+      // 全量：删表重建
+      await db.dropTable('kb');
+      await db.createTable('kb', data);
+    }
+  } else {
+    await db.createTable('kb', data);
   }
-  await db.createTable('kb', data);
 
   // 写 meta
-  const metaPath = path.join(vectorStoreDir, 'meta.json');
+  const totalChunks = incremental && existingMeta
+    ? (existingMeta.chunk_count - chunks.length + data.length) // 估算
+    : chunks.length;
+
   fs.writeFileSync(metaPath, JSON.stringify({
     embedding_model: `${provider.provider}/${provider.model}`,
     dimensions: provider.dimensions,
-    chunk_count: chunks.length,
+    chunk_count: data.length > 0 ? totalChunks : (existingMeta?.chunk_count || 0),
     file_count: mdFiles.length,
     indexed_at: new Date().toISOString()
   }, null, 2));
 
+  // 写 file hashes（增量模式用）
+  const allHashes = {};
+  for (const fp of mdFiles) {
+    const content = fs.readFileSync(fp, 'utf-8');
+    const hash = require('crypto').createHash('md5').update(content).digest('hex').slice(0, 12);
+    allHashes[path.relative(kbDir, fp)] = hash;
+  }
+  fs.writeFileSync(path.join(vectorStoreDir, 'file-hashes.json'), JSON.stringify(allHashes, null, 2));
+
   console.log(`\n✓ 向量索引完成`);
   console.log(`  文档: ${mdFiles.length}`);
-  console.log(`  切片: ${chunks.length}`);
+  console.log(`  本次更新切片: ${chunks.length}`);
   console.log(`  模型: ${provider.provider}/${provider.model}`);
   console.log(`  存储: ${vectorStoreDir}`);
+  console.log(`  模式: ${incremental && existingMeta ? '增量' : '全量'}`);
 }
 
 function splitByHeadings(body) {
@@ -147,10 +235,11 @@ function walkMd(dir, callback) {
 
 if (require.main === module) {
   const args = process.argv.slice(2);
-  const kbDir = args[0] || 'kb';
-  const vectorStoreDir = args[1] || path.join(kbDir, '..', '.vector-store');
+  const kbDir = args.find(a => !a.startsWith('--')) || 'kb';
+  const vectorStoreDir = args.filter(a => !a.startsWith('--'))[1] || path.join(kbDir, '..', '.vector-store');
+  const full = args.includes('--full');
 
-  indexKb(kbDir, vectorStoreDir).catch(e => {
+  indexKb(kbDir, vectorStoreDir, { incremental: !full }).catch(e => {
     console.error('索引失败:', e.message);
     process.exit(1);
   });
