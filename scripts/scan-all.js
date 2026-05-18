@@ -74,12 +74,8 @@ async function scanAll(configPath) {
         console.log(`  ⚠ 未知项目类型: ${project.type}`);
     }
 
-    // 建向量库
-    console.log(`  [${project.name}] 建向量库...`);
-    const vectorStoreDir = path.join(projectOutputDir, '.vector-store');
-    const { indexKb } = require('./kb-vector-index');
-    await indexKb(kbDir, vectorStoreDir);
-    console.log(`  [${project.name}] ✓ 完成`);
+    // 向量库不在这里建 — 移到层次 2 完成后统一构建（避免建两次）
+    console.log(`  [${project.name}] ✓ KB 生成完成`);
   }));
 
   // 跨项目文档

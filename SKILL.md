@@ -25,28 +25,30 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 
 当用户跑 `/project-scan`（无参数）时，按以下步骤**顺序执行**，每一步都不能跳过：
 
-### Step 1 — 执行 scan-all.js
+### Step 1 — 执行 scan-all.js（KB 生成，层次 1）
 ```bash
 cd <skill-dir> && node scripts/scan-all.js <config-path>
 ```
 如果超时，KB 文档已生成，继续下一步。
+注意：scan-all.js 不再构建向量库（向量库移到最后一步）。
 
-### Step 2 — 检查向量库是否构建完成
-```bash
-ls <output_dir>/<project>/.vector-store/meta.json
-```
-如果不存在或 chunk_count 为 0，询问用户是否构建（见下方"向量库配置"段）。
-
-### Step 3 — 构建 GitNexus 知识图谱
+### Step 2 — 构建 GitNexus 知识图谱
 ```bash
 node scripts/graph-index.js <config-path>
 ```
 用于影响分析（"改了这个方法会影响哪些模块"）。约 2-3 分钟/项目。
 
-### Step 4 — 询问是否执行层次 2
-**无论向量库是否构建，都要问这一步。** 见下方"层次 2 引导"段。
+### Step 3 — 询问是否执行层次 2
+**必须问这一步，不能跳过。** 见下方"层次 2 引导"段。
+层次 2 会覆盖部分层次 1 文档，所以向量库放在层次 2 之后构建。
 
-### Step 4 — 输出扫描摘要
+### Step 4 — 构建向量库（一次性，基于最终文档）
+```bash
+node scripts/kb-vector-index.js <kb-dir> <vector-store-dir>
+```
+在层次 2 完成后（或用户跳过层次 2 后）构建。只建一次，基于最终版本的文档。
+
+### Step 5 — 输出扫描摘要
 ```
 扫描完成：
   - pur-center: X 份文档，Y 个模块
