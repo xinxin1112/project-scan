@@ -36,7 +36,13 @@ async function search(vectorStoreDir, query, options = {}) {
   let searchTables = [];
   if (type === 'code' && tables.includes('code')) searchTables = ['code'];
   else if (type === 'business' && tables.includes('business')) searchTables = ['business'];
-  else searchTables = tables.filter(t => ['code', 'business'].includes(t));
+  else if (tables.includes('kb')) searchTables = ['kb'];
+  else searchTables = tables.filter(t => ['code', 'business', 'kb'].includes(t));
+
+  if (searchTables.length === 0 && tables.length > 0) {
+    // 兜底：搜所有表
+    searchTables = tables;
+  }
 
   const allResults = [];
 
