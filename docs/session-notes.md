@@ -431,3 +431,11 @@ cd ~/.claude/skills/project-scan && git pull origin main && npm install
 3. **层次 2 flow 自动化** — 接 Claude API 或本地 Ollama qwen2.5，实现 `--auto-lm` 的完整闭环
 4. **pur-center 全模块回归** — 扫 pur-center 所有模块（不只是 pur-reconcile），验证跨模块 inbound contract
 5. **setup 交互式命令** — `/project-scan setup` 引导用户生成 scan-config.yaml
+6. **GitNexus 知识图谱集成** — 影响分析层
+   - 安装 GitNexus，跑 benchmark（全量索引 pur-center + srm-web + supplier-portal 各要多久）
+   - 写 `scripts/graph-index.js`（调 GitNexus 索引 3 个项目，数据存 `<project>/.graph/`）
+   - 写 `scripts/graph-query.js`（影响分析：输入方法名 → 输出所有调用方 + 受影响页面）
+   - SKILL.md 加子命令：`/project-scan graph`、`/project-scan graph --impact=X`、`/project-scan graph --web`
+   - 决定更新策略：如果全量 < 2 分钟 → 绑定到 `/project-scan update`；> 10 分钟 → 独立按需
+   - 集成到全量扫描流程（Step 1 scan-all → Step 2 向量库 → Step 3 图谱 → Step 4 层次 2）
+   - Web UI：`/project-scan graph --web` 启动本地服务查看交互式图谱
