@@ -517,7 +517,7 @@ STOP 等待用户回复。
 - 有状态转移（setStatus/updateStatus）
 - 有事务注解（@Transactional）
 - 调用链深度 ≥ 3 层（Controller → Service → 子 Service/DomainService）
-- Controller 调用的 Service 方法体总行数 ≥ 100 行（递归统计，不是只看 Controller 本身）
+- 整条调用链的方法体总行数 ≥ 100 行（递归统计：Controller → AppService → 所有被调的 DomainService/ThirdService，累加各层方法体行数）
 
 如果某个模块没有满足条件的方法，选调用链最长的 top-1。确保每个有 Controller 的模块至少有 1 个方法被选中。
 
