@@ -447,7 +447,10 @@ node scripts/incremental.js kb . [--force] [--auto-lm]
      - `level2.frontend.auto_update: true` → 自动重生成前端层次 2
      - 两者都为 false → 跳过层次 2（除非显式传 `--auto-lm`）
 4. 跳过 human_edited 文档（除非 `--force`）
-5. 重建向量库
+5. 重建向量库（只重新 embed 变化的文档）
+6. GitNexus 图谱同步：`npx gitnexus analyze <source-dir> --index-only`
+   - commit 没变 → 1.5 秒跳过
+   - commit 变了 → 全量重建图谱（约 2.5 分钟）
 
 ## v2 搜索流程（`/project-scan search`）
 
