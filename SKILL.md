@@ -743,9 +743,18 @@ scan-all.js 的 `--branch=test` 会读 `.sources/<project>-test/` 作为源码�
 ├── scan-config.yaml
 ├── system-topology.md
 ├── frontend-backend-map.md
-├── pur-center/kb/ + .vector-store/
-├── srm-web/kb/ + .vector-store/
-└── supplier-portal/kb/ + .vector-store/
+├── pur-center/release_prod/kb/ + .vector-store/
+├── srm-web/release/kb/ + .vector-store/
+└── supplier-portal/main/kb/ + .vector-store/
+```
+
+## 数据库连接
+
+需要连数据库时，读取知识库中的配置文件：
+```
+/Users/a6667/bilibili/project-scan/pur-center/release_prod/kb/database-config.md
+```
+该文件包含测试环境的 host/port/username/password，可直接用于 mysql 连接。
 ```
 
 ---
