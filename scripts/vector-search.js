@@ -5,9 +5,9 @@ const lancedb = require('@lancedb/lancedb');
 const { detectProvider, embedBatch } = require('./embed');
 
 const DEFAULT_TOP_K = 5;
-// bge-m3 cosine similarity scores are typically in 0.55-0.75 range for relevant results
-// Lower threshold than nomic-embed-text (which scored 0.7+)
-const DEFAULT_THRESHOLD = 0.55;
+// bge-m3 cosine distance typically 0.35-0.60 for relevant results
+// score = 1 - distance, so relevant scores are 0.40-0.65
+const DEFAULT_THRESHOLD = 0.35;
 
 async function search(vectorStoreDir, query, options = {}) {
   const { topK = DEFAULT_TOP_K, threshold = DEFAULT_THRESHOLD, type } = options;
