@@ -132,6 +132,26 @@ cd <skill-dir> && node scripts/scan-all.js <config-path>
 ```bash
 node scripts/graph-index.js <config-path>
 ```
+
+先检测 GitNexus 是否安装：
+```bash
+which gitnexus
+```
+如果未安装，提示用户：
+```
+GitNexus 未安装。影响分析功能需要 GitNexus。
+
+安装命令：npm install -g gitnexus
+
+是否现在安装？
+1. 是，自动安装
+2. 否，跳过图谱构建（后续可用 /project-scan graph 补建）
+```
+
+STOP 等待用户回复。
+
+用户选 1 → 执行 `npm install -g gitnexus` → 安装完成后继续构建图谱。
+用户选 2 → 跳过 Step 2，继续 Step 3。
 用于影响分析（"改了这个方法会影响哪些模块"）。约 2-3 分钟/项目。
 
 图谱构建完成后，在用户的项目目录下生成 `.mcp.json`（如果不存在）：
