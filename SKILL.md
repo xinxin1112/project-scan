@@ -174,10 +174,9 @@ STOP 等待用户回复。
 用户选 1 → 执行 `npm install -g gitnexus` → 安装完成后继续构建图谱。
 用户选 2 → 跳过 Step 2，继续 Step 3。
 
-图谱构建耗时较长（2-3 分钟/项目），**应在后台执行**，不阻塞后续步骤：
+图谱构建耗时较长（2-3 分钟/项目），**必须等待完成**（层次 2 依赖图谱检测核心方法）：
 ```bash
-# 后台执行，继续 Step 3
-node scripts/graph-index.js <config-path> &
+node scripts/graph-index.js <config-path>
 ```
 图谱构建完成后会自动生成 `.mcp.json`。
 用于影响分析（"改了这个方法会影响哪些模块"）。约 2-3 分钟/项目。
@@ -514,6 +513,8 @@ STOP 等待用户回复。
 从 scan-config.yaml 的 `flow_level2.core_methods` 读取核心方法列表。
 如果没有配置，**通过 GitNexus 图谱快速检测**（< 1 秒）：
 
+**前置条件：GitNexus 图谱必须已构建。** 如果图谱不存在（Step 2 被跳过或还在后台运行），等待图谱构建完成后再继续。不提供回退方案 — 图谱是层次 2 检测的唯一数据源。
+
 ```bash
 gitnexus cypher -r <project> "
   MATCH (m:Method)
@@ -532,12 +533,6 @@ gitnexus cypher -r <project> "
 
 按模块分组取 top-2，排除纯导出/查询方法。确保每个有 Controller 的模块至少有 1 个方法被选中。
 
-如果 GitNexus 图谱不可用，回退到源码扫描（慢）：从 flow 文档中找满足以下任一条件的方法：
-- 调用了 ≥3 个不同的 Service/Client
-- 有状态转移（setStatus/updateStatus）
-- 有事务注解（@Transactional）
-- 调用链深度 ≥ 3 层
-- 整条调用链的方法体总行数 ≥ 100 行
 
 对每个核心方法：
 1. 读取 Controller + Service 源码（从对应环境的 worktree 路径读）
@@ -564,7 +559,7 @@ gitnexus cypher -r <frontend-project> "
 "
 ```
 
-按 app 分组取 top-2。如果 GitNexus 不可用，回退到文件大小检测（找 `pages/` 目录中文件最大 + 含 `Form`/`Editor`/`FooterContent`/`Drawer`/`Modal` 的 top-2 组件）。
+按 app 分组取 top-2。
 
 对每个核心组件：
 1. 读取组件完整源码（含关联的 hooks/constants）
