@@ -114,7 +114,7 @@ node scripts/scan-all.js <config-path> --branch=test
 
 脚本会：
 1. 读 `config.branches.test` 获取每个项目的实际 git 分支
-2. 自动 `git checkout` 切换到对应分支
+2. 使用 worktree 路径 `.sources/<project>-<env>/`（如不存在则自动 `git worktree add` 创建）
 3. KB 输出到 `<project>/test/kb/`（目录名用环境名，不用 git 分支名）
 4. 构建向量库 + 图谱
 5. 完成后不切回（下次 update 时按 `.scan-state.json` 记录的分支更新）
@@ -606,8 +606,9 @@ node scripts/incremental.js kb . [--force] [--auto-lm]
 ```
 
 内部流程：
-1. 切换 `.sources/<project>/` 到目标分支：`git checkout <branch> && git pull`
-2. 检测人工编辑（body hash 比对）→ 自动标记 human_edited
+1. 确定源码路径：prod → `.sources/<project>/`，test → `.sources/<project>-test/`（worktree，不切分支）
+2. 在对应 worktree 里 `git pull` 拉最新代码
+3. 检测人工编辑（body hash 比对）→ 自动标记 human_edited
 2. git diff 找过期文档（sources 反向索引）
 3. 分类：
    - 层次 1（纯脚本）→ 直接重生成
