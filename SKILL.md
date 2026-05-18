@@ -478,8 +478,31 @@ node scripts/unified-search.js "查询内容" [--project=pur-center] [--top=10]
 ## 配置文件位置
 
 ```
-/Users/a6667/bilibili/project-scan/scan-config.yaml
+/Users/a6667/bilibili/project-scan/scan-config.yaml        ← 默认（生产）
+/Users/a6667/bilibili/project-scan/scan-config.test.yaml   ← 测试环境（可选）
 ```
+
+## 多环境支持
+
+支持多份 `scan-config.<env>.yaml`，通过 `--env` 参数切换：
+
+```
+/project-scan                    ← 默认用 scan-config.yaml（生产）
+/project-scan --env=test         ← 用 scan-config.test.yaml（测试环境）
+/project-scan update --env=test  ← 增量更新测试环境
+/project-scan search "xxx" --env=test  ← 搜索测试环境的知识库
+```
+
+不同环境的输出目录应该分开（在各自的 `scan-config.<env>.yaml` 里配不同的 `output_dir`）：
+```
+~/bilibili/project-scan/          ← 生产环境 KB + 向量库 + 图谱
+~/bilibili/project-scan-test/     ← 测试环境 KB + 向量库 + 图谱
+```
+
+配置文件解析规则：
+1. `--env=X` → 找 `scan-config.X.yaml`
+2. 无 `--env` → 找 `scan-config.yaml`
+3. 都不存在 → 进入 setup 引导
 
 ## 知识库物理位置
 
