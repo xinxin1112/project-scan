@@ -760,6 +760,18 @@ git worktree add ../<project>-<env> <branch>
 
 scan-all.js 的 `--branch=test` 会读 `.sources/<project>-test/` 作为源码路径。
 
+## 环境选择规则
+
+读知识库、搜向量库、查图谱时，根据用户意图选择环境：
+
+| 用户说的 | 环境 | 知识库路径 | 图谱 -r 参数 |
+|---------|------|-----------|-------------|
+| "测试环境"/"develop"/"uat"/"test" | test | `<project>/test/kb/` | `-r /Users/a6667/bilibili/project-scan/.sources/<project>-test` |
+| "生产环境"/"线上"/"prod"/"release" | prod | `<project>/prod/kb/` | `-r pur-center`（或 srm-web / supplier-portal） |
+| 未指定环境 | **默认 test** | `<project>/test/kb/` | `-r /Users/a6667/bilibili/project-scan/.sources/<project>-test` |
+
+**默认 test 的原因**：日常开发都在测试分支，test 的知识库包含最新功能代码。
+
 ## 知识库物理位置
 
 **重要：`.sources/` 是源码目录（给 GitNexus 图谱用），不是知识库。知识库在 `<project>/<branch>/kb/` 下。**
