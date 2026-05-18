@@ -87,33 +87,37 @@ STOP 等待用户回复。
 4. 构建该项目的向量库 + 图谱
 5. 询问与已有项目的调用关系（追加到 relations）
 
-**用户选 3（构建新分支）**→ 对每个项目分别询问分支：
+**用户选 3（构建新分支）**→ 询问环境名：
 ```
-为以下项目指定要构建的分支（直接回车跳过该项目）：
+选择要构建的环境：
+1. test（测试环境）
+2. 其他（手动输入环境名）
 
-pur-center 的分支（当前已有：release_prod）：
+环境名对应 scan-config.yaml 的 branches 配置：
+  branches:
+    prod:                    ← --branch=prod
+      pur-center: release_prod
+      srm-web: release
+      supplier-portal: main
+    test:                    ← --branch=test
+      pur-center: develop
+      srm-web: uat
+      supplier-portal: develop
 ```
+
 STOP 等待用户回复。
 
+选择后执行：
+```bash
+node scripts/scan-all.js <config-path> --branch=test
 ```
-srm-web 的分支（当前已有：release）：
-```
-STOP 等待用户回复。
 
-```
-supplier-portal 的分支（当前已有：main）：
-```
-STOP 等待用户回复。
-
-然后对每个指定了分支的项目：
-1. `cd .sources/<project> && git fetch origin <branch> && git checkout <branch> && git pull origin <branch>`
-2. 扫描生成 KB 到 `<project>/<branch>/kb/`
-3. 构建向量库到 `<project>/<branch>/.vector-store/`
-4. GitNexus 图谱重建（因为切了分支）
-5. 完成后切回原分支（不影响已有 KB）
-
-注意：不同项目可以指定不同分支（如 pur-center 用 develop，srm-web 用 feat/new-ui）。
-回车跳过的项目不构建该分支的 KB。
+脚本会：
+1. 读 `config.branches.test` 获取每个项目的实际 git 分支
+2. 自动 `git checkout` 切换到对应分支
+3. KB 输出到 `<project>/test/kb/`（目录名用环境名，不用 git 分支名）
+4. 构建向量库 + 图谱
+5. 完成后不切回（下次 update 时按 `.scan-state.json` 记录的分支更新）
 
 **用户选 4（全量重建）**→ 确认后删除现有 KB，从头执行 Step 1 ~ Step 5。
 

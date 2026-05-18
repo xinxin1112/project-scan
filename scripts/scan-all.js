@@ -53,15 +53,38 @@ async function scanAll(configPath) {
 
   // 并行扫描所有项目
   // 解析 --branch 参数（按分支分目录存储 KB）
+  // --branch=prod → 用 config.branches.prod 里每个项目的实际分支
+  // --branch=test → 用 config.branches.test 里每个项目的实际分支
+  // 无 --branch → 用 project.branch（config 里的默认分支），目录名也用 project.branch
   const branchArg = process.argv.find(a => a.startsWith('--branch='));
-  const branchOverride = branchArg ? branchArg.split('=')[1] : null;
+  const branchKey = branchArg ? branchArg.split('=')[1] : null;
+  const branchMap = branchKey && config.branches && config.branches[branchKey]
+    ? config.branches[branchKey]
+    : null;
+
+  // 如果指定了 --branch 且有 branchMap，先切换各项目的 git 分支
+  if (branchMap) {
+    console.log(`\n--- 切换到 "${branchKey}" 环境分支 ---\n`);
+    for (const project of validProjects) {
+      const targetBranch = branchMap[project.name];
+      if (!targetBranch) continue;
+      const sourcePath = project.source || path.join(outputDir, '.sources', project.name);
+      try {
+        execSync(`git fetch origin ${targetBranch} --depth=1 2>/dev/null; git checkout ${targetBranch} 2>/dev/null; git pull origin ${targetBranch} 2>/dev/null`, { cwd: sourcePath, stdio: 'pipe' });
+        console.log(`  [${project.name}] → ${targetBranch} ✓`);
+      } catch (e) {
+        console.log(`  [${project.name}] → ${targetBranch} ✗ (${e.message.substring(0, 50)})`);
+      }
+    }
+  }
 
   await Promise.all(validProjects.map(async (project) => {
     console.log(`\n--- 扫描 ${project.name} (${project.type}) ---\n`);
 
-    // 确定分支名（用于目录结构）
-    const branch = branchOverride || project.branch || 'default';
-    const projectOutputDir = path.join(outputDir, project.name, branch);
+    // 确定目录名：--branch=test → 用 "test" 作为目录名
+    // 无 --branch → 用 project.branch 作为目录名
+    const dirName = branchKey || project.branch || 'default';
+    const projectOutputDir = path.join(outputDir, project.name, dirName);
     const kbDir = path.join(projectOutputDir, 'kb');
     fs.mkdirSync(kbDir, { recursive: true });
 
