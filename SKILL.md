@@ -10,19 +10,16 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 ## 版本分发
 
 ```
-解析 --env 参数 → 确定配置文件路径：
-  --env=X → scan-config.X.yaml
-  无 --env → scan-config.yaml
-
-检测配置文件是否存在？
+检测 scan-config.yaml 是否存在？
 ├── 存在 → v2 模式（按子命令分发）
-│     ├── 无参数 → 全量扫描（scan-all.js）
-│     ├── update → 增量更新
-│     ├── search → 统一搜索
+│     ├── 无参数 → Step 0 询问分支 → 全量扫描
+│     ├── update → 增量更新（上次扫描的分支）
+│     ├── update --branch=X → 增量更新指定分支
+│     ├── search → 统一搜索（默认搜所有分支，--branch 指定）
 │     ├── graph → 图谱操作
 │     ├── level2 → 层次 2 生成
 │     └── setup → 重新配置
-└── 不存在 → 进入 setup 交互流程（生成 scan-config.yaml 或 scan-config.X.yaml）
+└── 不存在 → 进入 setup 交互流程
 ```
 
 **重要**：当 `scan-config.yaml` 不存在时，不走 v1 兼容模式，直接进入 v2 setup 引导。
@@ -31,28 +28,44 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 
 当用户跑 `/project-scan`（无参数或带 `--env`）时，按以下步骤**顺序执行**，每一步都不能跳过：
 
-### Step 0 — 环境检测与配置文件定位
+### Step 0 — 分支选择
+
+每次执行 `/project-scan` 时，先询问用户要扫描哪个分支：
 
 ```
-解析 --env 参数：
-├── 有 --env=X → 找 scan-config.X.yaml
-├── 无 --env → 找 scan-config.yaml
-└── 都不存在 → 进入 setup 引导
+请选择要扫描的分支：
+1. release_prod（生产）
+2. develop（测试）
+3. 其他（手动输入分支名）
 ```
 
-如果是首次跑某个环境（对应的 output_dir 为空），询问用户：
+STOP 等待用户回复。
+
+选择后：
+1. 切换 `.sources/<project>/` 的 git 分支：`git checkout <branch> && git pull origin <branch>`
+2. KB 和向量库按分支分目录存储：
+
 ```
-检测到环境 "{env}" 尚未初始化。
-
-配置文件：scan-config.{env}.yaml
-输出目录：{output_dir}
-分支：{branch}
-数据库：{db_host}:{db_port}
-
-确认开始全量扫描？(y/n)
+<output_dir>/<project>/
+├── release_prod/          ← 生产分支
+│   ├── kb/
+│   ├── .vector-store/
+│   └── .gitnexus → ../.sources/<project>/.gitnexus  (共享图谱)
+├── develop/               ← 测试分支
+│   ├── kb/
+│   └── .vector-store/
+└── prd/                   ← PRD 文档（跨分支共享）
 ```
 
-STOP 等待用户确认。
+如果该分支目录已存在且 KB 已生成，询问：
+```
+分支 {branch} 的知识库已存在（上次扫描：{date}）。
+1. 增量更新（只更新变化的文档）
+2. 全量重建
+3. 取消
+```
+
+STOP 等待用户回复。
 
 ### Step 1 — 执行 scan-all.js（KB 生成，层次 1）
 ```bash
@@ -511,27 +524,40 @@ node scripts/unified-search.js "查询内容" [--project=pur-center] [--top=10]
 /Users/a6667/bilibili/project-scan/scan-config.test.yaml   ← 测试环境（可选）
 ```
 
-## 多环境支持
+## 多分支支持
 
-支持多份 `scan-config.<env>.yaml`，通过 `--env` 参数切换：
+同一个 `scan-config.yaml`，同一个 `.sources/` git clone，通过切分支支持多环境：
 
 ```
-/project-scan                    ← 默认用 scan-config.yaml（生产）
-/project-scan --env=test         ← 用 scan-config.test.yaml（测试环境）
-/project-scan update --env=test  ← 增量更新测试环境
-/project-scan search "xxx" --env=test  ← 搜索测试环境的知识库
+/project-scan                    ← 询问分支后执行
+/project-scan update             ← 更新当前分支（上次扫描的分支）
+/project-scan search "xxx" --branch=develop  ← 搜索指定分支的知识库
+/project-scan graph --impact=X --branch=release_prod  ← 指定分支的图谱
 ```
 
-不同环境的输出目录应该分开（在各自的 `scan-config.<env>.yaml` 里配不同的 `output_dir`）：
+物理结构：
 ```
-~/bilibili/project-scan/          ← 生产环境 KB + 向量库 + 图谱
-~/bilibili/project-scan-test/     ← 测试环境 KB + 向量库 + 图谱
+<output_dir>/
+├── scan-config.yaml
+├── .sources/
+│   ├── pur-center/              ← 一个 git clone，按需切分支
+│   ├── srm-web/
+│   └── supplier-portal/
+├── pur-center/
+│   ├── release_prod/kb/         ← 生产分支 KB
+│   ├── release_prod/.vector-store/
+│   ├── develop/kb/              ← 测试分支 KB
+│   ├── develop/.vector-store/
+│   └── prd/                     ← 跨分支共享
+├── srm-web/
+│   ├── release/kb/
+│   └── develop/kb/
+└── supplier-portal/
+    ├── main/kb/
+    └── develop/kb/
 ```
 
-配置文件解析规则：
-1. `--env=X` → 找 `scan-config.X.yaml`
-2. 无 `--env` → 找 `scan-config.yaml`
-3. 都不存在 → 进入 setup 引导
+`.scan-state.json` 记录上次扫描的分支，`/project-scan update` 默认更新该分支。
 
 ## 知识库物理位置
 
