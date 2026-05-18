@@ -28,10 +28,66 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 
 当用户跑 `/project-scan`（无参数或带 `--env`）时，按以下步骤**顺序执行**，每一步都不能跳过：
 
-### Step 0 — 分支选择
+### Step 0 — 本地状态检测 + 分支选择
 
-每次执行 `/project-scan` 时，先询问用户要扫描哪个分支：
+每次执行 `/project-scan` 时，先检测本地知识库状态：
 
+```
+检测 <output_dir> 下是否已有知识库：
+├── 有 KB 文档 → 询问操作类型
+└── 无 KB 文档 → 直接进入全量扫描
+```
+
+如果已有知识库，询问：
+```
+检测到已有知识库：
+  - pur-center: 1004 份文档（release_prod，上次扫描：2026-05-18）
+  - srm-web: 53 份文档（release，上次扫描：2026-05-18）
+  - supplier-portal: 1 份文档（main，上次扫描：2026-05-18）
+
+请选择操作：
+1. 增量更新（更新已有项目的变更）
+2. 新增项目（添加新的后端/前端项目）
+3. 切换分支（用其他分支重新扫描）
+4. 全量重建（删除现有 KB，从头扫描所有项目）
+```
+
+STOP 等待用户回复。
+
+**用户选 1（增量更新）**→ 等同于 `/project-scan update`，走增量更新流程。
+
+**用户选 2（新增项目）**→ 进入新增项目引导：
+```
+新项目的 git 地址或本地路径：
+```
+STOP 等待用户回复。
+
+```
+项目名称（如 pur-settlement）：
+```
+STOP 等待用户回复。
+
+```
+分支名称：
+```
+STOP 等待用户回复。
+
+```
+项目类型：
+1. 业务后端（Java/Spring，完整四层扫描）
+2. 网关/转发层（只提取转发映射）
+3. 前端（React，路由/API/Store/联动）
+```
+STOP 等待用户回复。
+
+然后：
+1. 追加到 scan-config.yaml 的 projects 列表
+2. `git clone --depth 1 --branch <branch> <url> .sources/<name>`
+3. 只扫描这个新项目（不动已有项目）
+4. 构建该项目的向量库 + 图谱
+5. 询问与已有项目的调用关系（追加到 relations）
+
+**用户选 3（切换分支）**→ 进入分支选择：
 ```
 请选择要扫描的分支：
 1. release_prod（生产）
@@ -43,29 +99,9 @@ STOP 等待用户回复。
 
 选择后：
 1. 切换 `.sources/<project>/` 的 git 分支：`git checkout <branch> && git pull origin <branch>`
-2. KB 和向量库按分支分目录存储：
+2. KB 和向量库按分支分目录存储
 
-```
-<output_dir>/<project>/
-├── release_prod/          ← 生产分支
-│   ├── kb/
-│   ├── .vector-store/
-│   └── .gitnexus → ../.sources/<project>/.gitnexus  (共享图谱)
-├── develop/               ← 测试分支
-│   ├── kb/
-│   └── .vector-store/
-└── prd/                   ← PRD 文档（跨分支共享）
-```
-
-如果该分支目录已存在且 KB 已生成，询问：
-```
-分支 {branch} 的知识库已存在（上次扫描：{date}）。
-1. 增量更新（只更新变化的文档）
-2. 全量重建
-3. 取消
-```
-
-STOP 等待用户回复。
+**用户选 4（全量重建）**→ 确认后删除现有 KB，从头执行 Step 1 ~ Step 5。
 
 ### Step 1 — 执行 scan-all.js（KB 生成，层次 1）
 ```bash
