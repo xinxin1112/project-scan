@@ -104,13 +104,7 @@ async function scanJavaSpring(project, kbDir, config) {
     console.log(`  [${project.name}] 自动检测到 ${modules.length} 个模块`);
   }
 
-  const dbConfig = (project.db || config.database) ? {
-    host: (project.db || config.database).host,
-    port: (project.db || config.database).port,
-    user: (project.db || config.database).username,
-    password: process.env[(project.db || config.database).password_env],
-    database: (project.db || config.database).database
-  } : null;
+  const dbConfig = resolveDbConfig(project, config);
 
   // 并行扫描所有模块
   await parallelMap(modules, async (mod) => {
@@ -840,6 +834,69 @@ function findDir(sourceDir, moduleName, dirNames) {
   }
   walk(moduleBase, 0);
   return found;
+}
+
+function resolveDbConfig(project, config) {
+  const dbDef = project.db || config.database;
+  if (!dbDef) return null;
+
+  // 1. 优先从环境变量读密码
+  let password = dbDef.password_env ? process.env[dbDef.password_env] : null;
+
+  // 2. 没有环境变量 → 从项目的 application.yml 自动解析
+  if (!password && project.source) {
+    password = parsePasswordFromApplicationYml(project.source);
+  }
+
+  if (!password) {
+    console.log('  ⚠ 数据库密码未找到（设 PUR_DB_PASSWORD 环境变量或确保 application.yml 中有密码）');
+  }
+
+  return {
+    host: dbDef.host,
+    port: dbDef.port,
+    user: dbDef.username,
+    password: password,
+    database: dbDef.database
+  };
+}
+
+function parsePasswordFromApplicationYml(sourceDir) {
+  // 查找 application.yml 文件
+  const candidates = [
+    'app/pur-web/src/main/resources/application.yml',
+    'app/pur-web/src/main/resources/application.yaml',
+    'src/main/resources/application.yml',
+    'src/main/resources/application.yaml'
+  ];
+
+  for (const candidate of candidates) {
+    const filePath = path.join(sourceDir, candidate);
+    if (!fs.existsSync(filePath)) continue;
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const lines = content.split('\n');
+
+    // 策略：找到非注释的 jdbc url 行，然后在附近找 password
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.trim().startsWith('#')) continue;
+      if (line.includes('jdbc:mysql') || line.includes('jdbc:postgresql') || line.includes('datasource')) {
+        // 在接下来 5 行内找 password
+        for (let j = i + 1; j < Math.min(lines.length, i + 6); j++) {
+          if (lines[j].trim().startsWith('#')) continue;
+          const match = lines[j].match(/^\s+password:\s*(.+)/);
+          if (match) {
+            const pwd = match[1].trim();
+            if (pwd && !pwd.startsWith('${') && pwd.length > 0) {
+              return pwd;
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function autoDetectReactApps(sourceDir) {
