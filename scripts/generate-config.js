@@ -96,6 +96,53 @@ function generateConfig(outputDir, config) {
   // 项目间关系
   scanConfig.relations = config.relations || [];
 
+  // 多分支配置
+  if (config.branches) {
+    scanConfig.branches = config.branches;
+  } else {
+    // 默认从 projects 的 branch 推断 prod
+    const prodBranches = {};
+    for (const p of scanConfig.projects) {
+      if (p.branch) prodBranches[p.name] = p.branch;
+    }
+    scanConfig.branches = { prod: prodBranches };
+  }
+
+  // 路径规则
+  scanConfig.paths = {
+    sources_dir: '.sources',
+    kb_dir_template: '{project}/{env}/kb',
+    vector_store_template: '{project}/{env}/.vector-store',
+    source_prod_template: '.sources/{project}',
+    source_test_template: '.sources/{project}-test'
+  };
+
+  // GitNexus 图谱查询参数
+  const gitNexusParams = { prod: {}, test: {} };
+  for (const p of scanConfig.projects) {
+    gitNexusParams.prod[p.name] = p.name;
+    // test 环境 pur-center 必须用路径（同名冲突）
+    gitNexusParams.test[p.name] = `{output_dir}/.sources/${p.name}-test`;
+  }
+  scanConfig.gitnexus = { repo_params: gitNexusParams };
+
+  // 数据库配置
+  if (config.database) {
+    scanConfig.database = config.database;
+  } else {
+    // 从 projects 的 db 段提取
+    const dbProject = scanConfig.projects.find(p => p.db);
+    if (dbProject) {
+      scanConfig.database = {
+        ...dbProject.db,
+        password_file: `{output_dir}/${dbProject.name}/prod/kb/database-config.md`
+      };
+    }
+  }
+
+  // 默认环境
+  scanConfig.default_env = config.default_env || 'test';
+
   // 写入文件
   const configPath = path.join(outputDir, 'scan-config.yaml');
   fs.mkdirSync(outputDir, { recursive: true });
