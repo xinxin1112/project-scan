@@ -526,12 +526,29 @@ node scripts/scan-all.js /Users/a6667/bilibili/project-scan/scan-config.yaml
 
 ## v2 增量更新流程（`/project-scan update`）
 
+### 分支选择
+
+检测已有哪些分支的 KB：
+```
+├── 只有 1 个分支 → 直接更新，不询问
+└── 有多个分支 → 询问：
+    "检测到以下分支的知识库：
+      1. release_prod（上次更新：2026-05-18）
+      2. develop（上次更新：2026-05-16）
+      3. 全部更新
+    请选择要更新的分支："
+    STOP 等待用户回复。
+```
+
+### 执行
+
 ```bash
 node scripts/incremental.js kb . [--force] [--auto-lm]
 ```
 
 内部流程：
-1. 检测人工编辑（body hash 比对）→ 自动标记 human_edited
+1. 切换 `.sources/<project>/` 到目标分支：`git checkout <branch> && git pull`
+2. 检测人工编辑（body hash 比对）→ 自动标记 human_edited
 2. git diff 找过期文档（sources 反向索引）
 3. 分类：
    - 层次 1（纯脚本）→ 直接重生成
