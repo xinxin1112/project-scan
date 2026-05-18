@@ -196,18 +196,25 @@ node scripts/graph-index.js <config-path>
 
 ## GitNexus 图谱注册名
 
-查询图谱时必须用 `-r` 指定 repo。由于 worktree 的注册名可能冲突，**统一用路径查询**：
+查询图谱时用 `-r` 指定 repo。`graph-index.js --branch=test` 会自动注册为 `<project>-test`：
 
-| 环境 | 项目 | 查询参数 |
+| 环境 | 项目 | 注册名（-r 参数） |
 |------|------|---------|
-| prod | pur-center | `-r pur-center` 或 `-r /Users/a6667/bilibili/project-scan/.sources/pur-center` |
-| prod | srm-web | `-r srm-web` |
-| prod | supplier-portal | `-r supplier-portal` |
-| test | pur-center | `-r /Users/a6667/bilibili/project-scan/.sources/pur-center-test`（不能用名字，会跟 prod 冲突） |
-| test | srm-web | `-r srm-web-test` |
-| test | supplier-portal | `-r supplier-portal-test` |
+| prod | pur-center | `pur-center` |
+| prod | srm-web | `srm-web` |
+| prod | supplier-portal | `supplier-portal` |
+| test | pur-center | `pur-center-test` |
+| test | srm-web | `srm-web-test` |
+| test | supplier-portal | `supplier-portal-test` |
 
-**注意**：pur-center 的 prod 和 test 都注册为 `pur-center`（GitNexus 用 git remote 推断名字），必须用路径区分。
+构建命令：
+```bash
+# prod 图谱
+node scripts/graph-index.js scan-config.yaml --branch=prod
+
+# test 图谱
+node scripts/graph-index.js scan-config.yaml --branch=test
+```
 
 ### Step 3 — 询问是否执行层次 2
 **必须问这一步，不能跳过。** 见下方"层次 2 引导"段。

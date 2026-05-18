@@ -13,12 +13,13 @@ function loadConfig(configPath) {
   return yaml.load(fs.readFileSync(configPath, 'utf-8'));
 }
 
-function indexProject(projectName, sourcePath) {
-  console.log(`  [${projectName}] 索引中...`);
+function indexProject(projectName, sourcePath, registryName) {
+  const name = registryName || projectName;
+  console.log(`  [${name}] 索引中...`);
   const start = Date.now();
 
   try {
-    const result = execSync(`gitnexus analyze "${sourcePath}" --index-only`, {
+    const result = execSync(`gitnexus analyze "${sourcePath}" --index-only --name "${name}"`, {
       timeout: 600000, // 10 分钟超时
       stdio: ['pipe', 'pipe', 'pipe']
     }).toString();
@@ -44,14 +45,19 @@ async function main() {
   const args = process.argv.slice(2);
   const configPath = args.find(a => !a.startsWith('--'));
   const projectFilter = args.find(a => a.startsWith('--project='))?.split('=')[1];
+  const branchArg = args.find(a => a.startsWith('--branch='));
+  const branchKey = branchArg ? branchArg.split('=')[1] : null;
 
   if (!configPath) {
-    console.error('用法: node graph-index.js <scan-config.yaml> [--project=X]');
+    console.error('用法: node graph-index.js <scan-config.yaml> [--project=X] [--branch=prod|test]');
     process.exit(1);
   }
 
   const config = loadConfig(configPath);
   const outputDir = config.output_dir;
+  const branchMap = branchKey && config.branches && config.branches[branchKey]
+    ? config.branches[branchKey]
+    : null;
 
   console.log('=== GitNexus 图谱索引 ===\n');
 
@@ -64,14 +70,26 @@ async function main() {
   let failed = 0;
 
   for (const project of projects) {
-    const sourcePath = project.source || path.join(outputDir, '.sources', project.name);
+    let sourcePath;
+    let registryName;
+
+    if (branchKey && branchKey !== 'prod') {
+      // 非 prod 分支：用 worktree 路径，注册名加后缀
+      sourcePath = path.join(outputDir, '.sources', `${project.name}-${branchKey}`);
+      registryName = `${project.name}-${branchKey}`;
+    } else {
+      // prod 或无 --branch：用默认路径
+      sourcePath = project.source || path.join(outputDir, '.sources', project.name);
+      registryName = project.name;
+    }
+
     if (!fs.existsSync(sourcePath)) {
-      console.log(`  [${project.name}] ⚠ 源码路径不存在，跳过`);
+      console.log(`  [${registryName}] ⚠ 源码路径不存在（${sourcePath}），跳过`);
       failed++;
       continue;
     }
 
-    const ok = indexProject(project.name, sourcePath);
+    const ok = indexProject(project.name, sourcePath, registryName);
     if (ok) success++;
     else failed++;
   }
