@@ -25,26 +25,51 @@ function findStaleDocuments(kbDir, repoDir) {
     if (!fm.last_scan_commits || fm.last_scan_commits.length === 0) return;
 
     // 检查 sources 是否有变更
+    // scan-all.js 记录的是扫描时的 repo HEAD（短 hash）
+    // 这里比对：当前 repo HEAD 是否与记录的 commit 一致
     const lastCommit = fm.last_scan_commits[0]?.commit;
     if (!lastCommit) return;
 
-    for (const source of fm.sources) {
-      const sourcePath = path.resolve(repoDir, source);
-      if (!fs.existsSync(sourcePath)) continue;
+    // 获取当前 repo HEAD
+    let currentHead;
+    try {
+      currentHead = execSync('git rev-parse --short HEAD', { cwd: repoDir }).toString().trim();
+    } catch (e) {
+      return;
+    }
 
+    // 如果 repo HEAD 没变，所有文档都是最新的
+    if (currentHead === lastCommit) return;
+
+    // repo HEAD 变了，检查 sources 文件是否在 lastCommit..HEAD 之间有变更
+    for (const source of fm.sources) {
       try {
-        const currentCommit = execSync(`git log -1 --format=%H -- "${source}"`, { cwd: repoDir }).toString().trim();
-        if (currentCommit && !currentCommit.startsWith(lastCommit) && lastCommit !== currentCommit.slice(0, lastCommit.length)) {
+        const changed = execSync(`git diff --name-only ${lastCommit}..HEAD -- "${source}"`, { cwd: repoDir }).toString().trim();
+        if (changed) {
           stale.push({
             kbFile: filePath,
             changedSource: source,
             lastCommit,
-            currentCommit: currentCommit.slice(0, 10)
+            currentCommit: currentHead
           });
           break;
         }
       } catch (e) {
-        // git 命令失败，跳过
+        // git 命令失败（可能是 shallow clone），用文件级 commit 回退
+        try {
+          const fileCommit = execSync(`git log -1 --format=%h -- "${source}"`, { cwd: repoDir }).toString().trim();
+          if (fileCommit && fileCommit !== lastCommit) {
+            stale.push({
+              kbFile: filePath,
+              changedSource: source,
+              lastCommit,
+              currentCommit: fileCommit
+            });
+            break;
+          }
+        } catch (e2) {
+          // 跳过
+        }
       }
     }
   });

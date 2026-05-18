@@ -109,7 +109,7 @@ function computeBodyHash(body) {
   return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex').slice(0, 16);
 }
 
-function createFrontmatter({ kb_layer, summary, sources, commit, body }) {
+function createFrontmatter({ kb_layer, summary, sources, commit, fileCommits, body }) {
   const bodyHash = computeBodyHash(body);
   return {
     kb_layer,
@@ -118,7 +118,7 @@ function createFrontmatter({ kb_layer, summary, sources, commit, body }) {
     sources: sources || [],
     last_scan_commits: (sources || []).map(file => ({
       file,
-      commit: commit || '',
+      commit: (fileCommits && fileCommits[file]) || commit || '',
       body_hash: bodyHash
     }))
   };

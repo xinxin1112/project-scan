@@ -815,6 +815,15 @@ function getCommit(sourceDir) {
   }
 }
 
+function getFileCommit(sourceDir, filePath) {
+  try {
+    const relPath = path.relative(sourceDir, filePath);
+    return execSync(`git log -1 --format=%h -- "${relPath}"`, { cwd: sourceDir }).toString().trim() || getCommit(sourceDir);
+  } catch (e) {
+    return getCommit(sourceDir);
+  }
+}
+
 function autoDetectModules(sourceDir) {
   const modules = [];
 
