@@ -512,7 +512,7 @@ STOP 等待用户回复。
 - **不要切分支**，直接读对应 worktree 目录的源码
 
 从 scan-config.yaml 的 `flow_level2.core_methods` 读取核心方法列表。
-如果没有配置，自动检测：从已生成的 flow 文档中找调用链最长 + 有状态转移的 top-5 方法。
+如果没有配置，自动检测：对每个有 Controller 的模块，从已生成的 flow 文档中找调用链最长 + 有状态转移的 **top-2** 方法（预计 15-20 个方法）。
 
 对每个核心方法：
 1. 读取 Controller + Service 源码（从对应环境的 worktree 路径读）
@@ -524,7 +524,7 @@ STOP 等待用户回复。
 
 **源码路径同上**：读对应环境的 worktree 目录，不切分支。
 
-自动检测核心表单组件：从前端 app 的 `pages/` 目录中找文件最大 + 含 `Form`/`Editor`/`FooterContent` 的 top-3 组件。
+自动检测核心表单组件：对每个有 `pages/` 目录的前端 app，找文件最大 + 含 `Form`/`Editor`/`FooterContent`/`Drawer`/`Modal` 的 **top-2** 组件（预计 8-12 个组件）。
 
 对每个核心组件：
 1. 读取组件完整源码（含关联的 hooks/constants）
