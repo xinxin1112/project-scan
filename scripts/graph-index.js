@@ -18,7 +18,7 @@ function indexProject(projectName, sourcePath) {
   const start = Date.now();
 
   try {
-    const result = execSync(`npx gitnexus analyze "${sourcePath}"`, {
+    const result = execSync(`gitnexus analyze "${sourcePath}" --index-only`, {
       timeout: 600000, // 10 分钟超时
       stdio: ['pipe', 'pipe', 'pipe']
     }).toString();

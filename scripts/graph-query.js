@@ -14,7 +14,7 @@ const yaml = require('js-yaml');
  */
 
 function runInRepo(sourcePath, args) {
-  const cmd = `npx gitnexus ${args.map(a => a.includes(' ') ? `"${a}"` : a).join(' ')} 2>/dev/null`;
+  const cmd = `gitnexus ${args.map(a => a.includes(' ') ? `"${a}"` : a).join(' ')} 2>/dev/null`;
   try {
     const stdout = execSync(cmd, {
       cwd: sourcePath,
