@@ -194,23 +194,25 @@ node scripts/graph-index.js <config-path>
 ```
 这样新会话启动时 Claude 自动加载 GitNexus MCP，可以直接查影响分析，不需要手动跑命令。
 
-## GitNexus 图谱注册名
+## GitNexus 图谱查询
 
-查询图谱时用 `-r` 指定 repo。`graph-index.js --branch=test` 会自动注册为 `<project>-test`：
+GitNexus 的 `--name` 参数对同一 git remote 的 worktree 不生效（都注册为同名）。**查询时统一用路径**：
 
-| 环境 | 项目 | 注册名（-r 参数） |
+| 环境 | 项目 | 查询参数 |
 |------|------|---------|
-| prod | pur-center | `pur-center` |
-| prod | srm-web | `srm-web` |
-| prod | supplier-portal | `supplier-portal` |
-| test | pur-center | `pur-center-test` |
-| test | srm-web | `srm-web-test` |
-| test | supplier-portal | `supplier-portal-test` |
+| prod | pur-center | `-r pur-center` |
+| prod | srm-web | `-r srm-web` |
+| prod | supplier-portal | `-r supplier-portal` |
+| test | pur-center | `-r /Users/a6667/bilibili/project-scan/.sources/pur-center-test` |
+| test | srm-web | `-r srm-web-test` |
+| test | supplier-portal | `-r supplier-portal-test` |
+
+**重要**：pur-center 的 test 必须用完整路径，不能用名字（会命中 prod）。
 
 构建命令：
 ```bash
-# prod 图谱
-node scripts/graph-index.js scan-config.yaml --branch=prod
+# prod 图谱（默认）
+node scripts/graph-index.js scan-config.yaml
 
 # test 图谱
 node scripts/graph-index.js scan-config.yaml --branch=test
