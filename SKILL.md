@@ -38,6 +38,19 @@ node scripts/graph-index.js <config-path>
 ```
 用于影响分析（"改了这个方法会影响哪些模块"）。约 2-3 分钟/项目。
 
+图谱构建完成后，在用户的项目目录下生成 `.mcp.json`（如果不存在）：
+```json
+{
+  "mcpServers": {
+    "gitnexus": {
+      "command": "gitnexus",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+这样新会话启动时 Claude 自动加载 GitNexus MCP，可以直接查影响分析，不需要手动跑命令。
+
 ### Step 3 — 询问是否执行层次 2
 **必须问这一步，不能跳过。** 见下方"层次 2 引导"段。
 层次 2 会覆盖部分层次 1 文档，所以向量库放在层次 2 之后构建。

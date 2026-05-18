@@ -78,6 +78,26 @@ async function main() {
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n=== 完成（${elapsed}s）— ${success} 成功, ${failed} 失败 ===`);
+
+  // 在每个项目的源码目录生成 .mcp.json（如果不存在）
+  if (success > 0) {
+    for (const project of projects) {
+      const sourcePath = project.source || path.join(outputDir, '.sources', project.name);
+      const mcpPath = path.join(sourcePath, '.mcp.json');
+      if (!fs.existsSync(mcpPath)) {
+        const mcpConfig = {
+          mcpServers: {
+            gitnexus: {
+              command: 'gitnexus',
+              args: ['mcp']
+            }
+          }
+        };
+        fs.writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2) + '\n', 'utf-8');
+        console.log(`  [${project.name}] .mcp.json 已生成（GitNexus MCP 自动加载）`);
+      }
+    }
+  }
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
