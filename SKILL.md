@@ -37,7 +37,13 @@ ls <output_dir>/<project>/.vector-store/meta.json
 ```
 如果不存在或 chunk_count 为 0，询问用户是否构建（见下方"向量库配置"段）。
 
-### Step 3 — 询问是否执行层次 2
+### Step 3 — 构建 GitNexus 知识图谱
+```bash
+node scripts/graph-index.js <config-path>
+```
+用于影响分析（"改了这个方法会影响哪些模块"）。约 2-3 分钟/项目。
+
+### Step 4 — 询问是否执行层次 2
 **无论向量库是否构建，都要问这一步。** 见下方"层次 2 引导"段。
 
 ### Step 4 — 输出扫描摘要
@@ -70,6 +76,14 @@ ls <output_dir>/<project>/.vector-store/meta.json
 | `/project-scan level2 --backend --project=pur-center` | 指定后端项目 | 只分析该项目 |
 | `/project-scan level2 --backend --project=pur-center --module=pur-reconcile` | 指定模块 | 只分析该模块 |
 | `/project-scan level2 --backend --method=confirm` | 指定方法 | 只分析该方法 |
+| `/project-scan graph` | 构建/重建知识图谱（GitNexus） | `node scripts/graph-index.js` |
+| `/project-scan graph --project=X` | 只索引指定项目 | `node scripts/graph-index.js --project=X` |
+| `/project-scan graph --impact=<target>` | 影响分析（改了 target 会影响什么） | `node scripts/graph-query.js impact <target>` |
+| `/project-scan graph --impact=<target> --downstream` | 下游影响（target 依赖什么） | `node scripts/graph-query.js impact <target> --direction=downstream` |
+| `/project-scan graph --context=<symbol>` | 符号 360° 视图（调用方+被调方+所属流程） | `node scripts/graph-query.js context <symbol>` |
+| `/project-scan graph --query=<search>` | 图谱语义搜索 | `node scripts/graph-query.js query <search>` |
+| `/project-scan graph --detect-changes` | 检测 git diff 影响了哪些符号和流程 | `node scripts/graph-query.js detect-changes` |
+| `/project-scan graph --web` | 启动 Web UI 查看交互式图谱 | `npx gitnexus serve` |
 
 ## v2 setup 交互流程（`/project-scan setup`）
 
