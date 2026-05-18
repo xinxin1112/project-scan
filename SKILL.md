@@ -184,6 +184,13 @@ node scripts/kb-vector-index.js <kb-dir> <vector-store-dir>
 ```
 在层次 2 完成后（或用户跳过层次 2 后）构建。只建一次，基于最终版本的文档。
 
+**应在后台执行**（耗时较长，不需要交互）：
+```bash
+# 后台执行，不阻塞
+node scripts/kb-vector-index.js <kb-dir> <vector-store-dir> &
+```
+完成后输出 chunk 数量。
+
 ### Step 5 — 输出扫描摘要
 ```
 扫描完成：
