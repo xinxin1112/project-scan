@@ -49,10 +49,23 @@ description: Use when scanning a project codebase to generate knowledge base, wh
 1. 增量更新（更新已有项目的变更）
 2. 新增项目（添加新的后端/前端项目）
 3. 构建新分支（为其他分支构建知识库，不影响已有的）
-4. 全量重建（删除现有 KB，从头扫描所有项目）
+4. 重建指定分支（只重建某个已有分支的知识库）
+5. 全量重建（删除所有 KB，从头扫描所有项目所有分支）
 ```
 
 STOP 等待用户回复。
+
+**用户选 4（重建指定分支）**→ 列出已有分支让用户选：
+```
+已有的分支知识库：
+1. prod（pur-center: release_prod, srm-web: release, supplier-portal: main）
+2. test（pur-center: develop, srm-web: uat, supplier-portal: develop）
+
+选择要重建的分支：
+```
+STOP 等待用户回复。
+
+选择后只重建该分支的 KB + 向量库 + 图谱，不动其他分支。
 
 **用户选 1（增量更新）**→ 等同于 `/project-scan update`，走增量更新流程。
 
