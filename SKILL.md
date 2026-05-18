@@ -485,16 +485,23 @@ STOP 等待用户回复。
 
 ### 后端层次 2 执行
 
+**重要：源码路径规则**
+- prod 环境 → 读 `.sources/<project>/` 的代码
+- test 环境 → 读 `.sources/<project>-test/` 的代码（worktree）
+- **不要切分支**，直接读对应 worktree 目录的源码
+
 从 scan-config.yaml 的 `flow_level2.core_methods` 读取核心方法列表。
 如果没有配置，自动检测：从已生成的 flow 文档中找调用链最长 + 有状态转移的 top-5 方法。
 
 对每个核心方法：
-1. 读取 Controller + Service 源码
+1. 读取 Controller + Service 源码（从对应环境的 worktree 路径读）
 2. 用 `flow-level2-builder.js` 构建分析 prompt
 3. 当前 AI 会话直接分析代码，输出结构化的层次 2 文档
-4. 写入 `kb/<module>/flows/<method>.md`（覆盖层次 1 版本）
+4. 写入 `<project>/<branch>/kb/<module>/flows/<method>.md`（覆盖层次 1 版本）
 
 ### 前端层次 2 执行
+
+**源码路径同上**：读对应环境的 worktree 目录，不切分支。
 
 自动检测核心表单组件：从前端 app 的 `pages/` 目录中找文件最大 + 含 `Form`/`Editor`/`FooterContent` 的 top-3 组件。
 
