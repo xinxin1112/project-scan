@@ -194,6 +194,21 @@ node scripts/graph-index.js <config-path>
 ```
 这样新会话启动时 Claude 自动加载 GitNexus MCP，可以直接查影响分析，不需要手动跑命令。
 
+## GitNexus 图谱注册名
+
+查询图谱时必须用 `-r` 指定 repo。由于 worktree 的注册名可能冲突，**统一用路径查询**：
+
+| 环境 | 项目 | 查询参数 |
+|------|------|---------|
+| prod | pur-center | `-r pur-center` 或 `-r /Users/a6667/bilibili/project-scan/.sources/pur-center` |
+| prod | srm-web | `-r srm-web` |
+| prod | supplier-portal | `-r supplier-portal` |
+| test | pur-center | `-r /Users/a6667/bilibili/project-scan/.sources/pur-center-test`（不能用名字，会跟 prod 冲突） |
+| test | srm-web | `-r srm-web-test` |
+| test | supplier-portal | `-r supplier-portal-test` |
+
+**注意**：pur-center 的 prod 和 test 都注册为 `pur-center`（GitNexus 用 git remote 推断名字），必须用路径区分。
+
 ### Step 3 — 询问是否执行层次 2
 **必须问这一步，不能跳过。** 见下方"层次 2 引导"段。
 层次 2 会覆盖部分层次 1 文档，所以向量库放在层次 2 之后构建。
