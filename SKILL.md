@@ -697,8 +697,14 @@ node scripts/incremental.js kb . [--force] [--auto-lm]
      - `level2.frontend.auto_update: true` → 自动重生成前端层次 2
      - 两者都为 false → 跳过层次 2（除非显式传 `--auto-lm`）
 4. 跳过 human_edited 文档（除非 `--force`）
-5. 重建向量库（只重新 embed 变化的文档）
-6. GitNexus 图谱同步：`gitnexus analyze <source-dir> --index-only`
+5. 重建向量库：`kb-vector-index.js`（增量模式，只 embed 变化的文档）
+   - **如果 KB 文档没有变化（scan-all.js 输出 0 份新文档），跳过向量库重建**
+   - 如果有新增/修改的 KB 文档 → 自动增量重建
+6. 层次 2 判断：
+   - **如果有新增的 Controller 方法或新模块** → 重新检测核心方法 → 重跑层次 2
+   - **如果只是已有文件的修改**（method-index 更新但无新 Controller）→ 跳过层次 2
+   - 判断依据：`scan-all.js` 输出的新文档数 > 0 且包含 contracts 类型
+7. GitNexus 图谱同步：`gitnexus analyze <source-dir> --index-only`
    - commit 没变 → 1.5 秒跳过
    - commit 变了 → 全量重建图谱（约 2.5 分钟）
    - **重建前必须停止 `gitnexus serve` 和 `gitnexus mcp` 进程**（否则数据库锁冲突）：
