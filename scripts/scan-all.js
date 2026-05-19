@@ -38,7 +38,13 @@ async function scanAll(configPath) {
   console.log('');
 
   // 预处理：解析源码路径
+  const projectFilter = process.argv.find(a => a.startsWith('--project='));
+  const projectFilterName = projectFilter ? projectFilter.split('=')[1] : null;
+
   const validProjects = config.projects.filter(project => {
+    // --project 过滤
+    if (projectFilterName && project.name !== projectFilterName) return false;
+
     if (!project.source) {
       const sourcesDir = path.join(outputDir, '.sources', project.name);
       if (fs.existsSync(sourcesDir)) {
@@ -97,8 +103,8 @@ async function scanAll(configPath) {
     console.log(`\n--- 扫描 ${project.name} (${project.type}) ---\n`);
 
     // 确定目录名：--branch=test → 用 "test" 作为目录名
-    // 无 --branch → 用 project.branch 作为目录名
-    const dirName = branchKey || project.branch || 'default';
+    // 无 --branch → 默认用 "prod" 作为目录名（不用 git 分支名）
+    const dirName = branchKey || 'prod';
     const projectOutputDir = path.join(outputDir, project.name, dirName);
     const kbDir = path.join(projectOutputDir, 'kb');
     fs.mkdirSync(kbDir, { recursive: true });
