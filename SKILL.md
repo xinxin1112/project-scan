@@ -698,9 +698,20 @@ node scripts/incremental.js kb . [--force] [--auto-lm]
      - 两者都为 false → 跳过层次 2（除非显式传 `--auto-lm`）
 4. 跳过 human_edited 文档（除非 `--force`）
 5. 重建向量库（只重新 embed 变化的文档）
-6. GitNexus 图谱同步：`npx gitnexus analyze <source-dir> --index-only`
+6. GitNexus 图谱同步：`gitnexus analyze <source-dir> --index-only`
    - commit 没变 → 1.5 秒跳过
    - commit 变了 → 全量重建图谱（约 2.5 分钟）
+   - **重建前必须停止 `gitnexus serve` 和 `gitnexus mcp` 进程**（否则数据库锁冲突）：
+     ```bash
+     # 检查并停止占锁进程
+     pkill -f "gitnexus serve" 2>/dev/null
+     pkill -f "gitnexus mcp" 2>/dev/null
+     sleep 1
+     # 重建
+     gitnexus analyze <source-dir> --index-only
+     # 重建完成后重启 MCP
+     nohup gitnexus mcp > /dev/null 2>&1 &
+     ```
 
 ## v2 搜索流程（`/project-scan search`）
 
