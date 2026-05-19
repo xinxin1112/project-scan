@@ -921,13 +921,26 @@ function resolveDbConfig(project, config) {
 }
 
 function parsePasswordFromApplicationYml(sourceDir) {
-  // 查找 application.yml 文件
+  // 查找 application.yml 文件 — 先试常见路径，再通配搜索
   const candidates = [
     'app/pur-web/src/main/resources/application.yml',
     'app/pur-web/src/main/resources/application.yaml',
     'src/main/resources/application.yml',
     'src/main/resources/application.yaml'
   ];
+
+  // 动态搜索：app/*/src/main/resources/application.yml
+  try {
+    const appDir = path.join(sourceDir, 'app');
+    if (fs.existsSync(appDir)) {
+      for (const entry of fs.readdirSync(appDir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          const ymlPath = `app/${entry.name}/src/main/resources/application.yml`;
+          if (!candidates.includes(ymlPath)) candidates.push(ymlPath);
+        }
+      }
+    }
+  } catch (e) {}
 
   for (const candidate of candidates) {
     const filePath = path.join(sourceDir, candidate);
