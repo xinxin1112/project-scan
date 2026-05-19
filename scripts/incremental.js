@@ -43,8 +43,20 @@ function findStaleDocuments(kbDir, repoDir) {
 
     // repo HEAD 变了，检查 sources 文件是否在 lastCommit..HEAD 之间有变更
     for (const source of fm.sources) {
+      // source 可能是相对于 KB 文件的路径，需要解析成相对于 repoDir 的路径
+      let gitRelPath;
+      if (path.isAbsolute(source)) {
+        gitRelPath = path.relative(repoDir, source);
+      } else {
+        const absSource = path.resolve(path.dirname(filePath), source);
+        gitRelPath = path.relative(repoDir, absSource);
+      }
+
+      // 如果解析后的路径指向 repo 外部（以 .. 开头），跳过
+      if (gitRelPath.startsWith('..')) continue;
+
       try {
-        const changed = execSync(`git diff --name-only ${lastCommit}..HEAD -- "${source}"`, { cwd: repoDir }).toString().trim();
+        const changed = execSync(`git diff --name-only ${lastCommit}..HEAD -- "${gitRelPath}"`, { cwd: repoDir }).toString().trim();
         if (changed) {
           stale.push({
             kbFile: filePath,
@@ -57,7 +69,7 @@ function findStaleDocuments(kbDir, repoDir) {
       } catch (e) {
         // git 命令失败（可能是 shallow clone），用文件级 commit 回退
         try {
-          const fileCommit = execSync(`git log -1 --format=%h -- "${source}"`, { cwd: repoDir }).toString().trim();
+          const fileCommit = execSync(`git log -1 --format=%h -- "${gitRelPath}"`, { cwd: repoDir }).toString().trim();
           if (fileCommit && fileCommit !== lastCommit) {
             stale.push({
               kbFile: filePath,
