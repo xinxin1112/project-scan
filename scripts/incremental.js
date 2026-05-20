@@ -257,12 +257,79 @@ function regenerateFlowLevel2(staleDoc, repoDir) {
 
 if (require.main === module) {
   const args = process.argv.slice(2);
-  const kbDir = args[0] || 'kb';
-  const repoDir = args[1] || process.cwd();
   const force = args.includes('--force');
   const autoLM = args.includes('--auto-lm');
+  const branchArg = args.find(a => a.startsWith('--branch='));
+  const branchKey = branchArg ? branchArg.split('=')[1] : null;
+  const positionalArgs = args.filter(a => !a.startsWith('--'));
 
-  console.log('=== 增量更新检查 ===\n');
+  // 判断第一个参数是 config 文件还是 kb 目录
+  const firstArg = positionalArgs[0];
+  const isConfigMode = firstArg && firstArg.endsWith('.yaml');
+
+  if (isConfigMode) {
+    // 新模式：读 scan-config.yaml，遍历所有项目
+    const yaml = require('js-yaml');
+    const config = yaml.load(fs.readFileSync(firstArg, 'utf-8'));
+    const outputDir = config.output_dir;
+    const envs = branchKey ? [branchKey] : Object.keys(config.branches || { prod: {} });
+
+    console.log('=== 增量更新检查 ===\n');
+
+    let totalStale = 0;
+    let totalSkipped = 0;
+
+    for (const env of envs) {
+      for (const project of config.projects) {
+        const kbDir = path.join(outputDir, project.name, env, 'kb');
+        if (!fs.existsSync(kbDir)) continue;
+
+        // 确定源码目录
+        let repoDir;
+        if (env === 'prod') {
+          repoDir = project.source || path.join(outputDir, '.sources', project.name);
+        } else {
+          repoDir = path.join(outputDir, '.sources', `${project.name}-${env}`);
+        }
+        if (!fs.existsSync(repoDir)) continue;
+
+        console.log(`--- ${project.name} (${env}) ---`);
+
+        const edited = detectHumanEdits(kbDir);
+        if (edited.length > 0) {
+          console.log(`  检测到 ${edited.length} 份人工编辑`);
+          for (const e of edited) markHumanEdited(e.file);
+        }
+
+        const { stale, skipped } = findStaleDocuments(kbDir, repoDir);
+        totalSkipped += skipped.length;
+
+        if (stale.length > 0) {
+          totalStale += stale.length;
+          console.log(`  过期: ${stale.length} 份`);
+          for (const s of stale) {
+            console.log(`    ${path.relative(kbDir, s.kbFile)} (${s.changedSource})`);
+          }
+          if (force) {
+            const results = regenerateStaleDocuments(stale, { repoDir, kbDir, autoLM });
+            console.log(`  → 重生成 ${results.regenerated.length} 份`);
+          }
+        } else {
+          console.log(`  ✓ 最新`);
+        }
+      }
+    }
+
+    console.log(`\n=== 总结：${totalStale} 份过期，${totalSkipped} 份跳过（human_edited） ===`);
+    if (totalStale > 0 && !force) {
+      console.log('  加 --force 执行重生成');
+    }
+  } else {
+    // 旧模式：直接传 kbDir repoDir
+    const kbDir = positionalArgs[0] || 'kb';
+    const repoDir = positionalArgs[1] || process.cwd();
+
+    console.log('=== 增量更新检查 ===\n');
 
   // 1. 检测人工编辑
   const edited = detectHumanEdits(kbDir);
@@ -332,4 +399,5 @@ if (require.main === module) {
   } else {
     console.log('\n✓ 所有文档均为最新');
   }
+  } // end of旧模式 else block
 }
