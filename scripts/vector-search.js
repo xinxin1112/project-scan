@@ -10,7 +10,7 @@ const DEFAULT_TOP_K = 5;
 const DEFAULT_THRESHOLD = 0.35;
 
 async function search(vectorStoreDir, query, options = {}) {
-  const { topK = DEFAULT_TOP_K, threshold = DEFAULT_THRESHOLD, type } = options;
+  const { topK = DEFAULT_TOP_K, threshold = DEFAULT_THRESHOLD, type, blame = false } = options;
 
   const metaPath = path.join(vectorStoreDir, 'meta.json');
   if (!fs.existsSync(metaPath)) {
@@ -72,11 +72,9 @@ async function search(vectorStoreDir, query, options = {}) {
   allResults.sort((a, b) => b.score - a.score);
   const topResults = allResults.slice(0, topK);
 
-  // 对结果附加 git blame 信息（作者）
-  if (topResults.length > 0) {
-    // vectorStoreDir = <output_dir>/<project>/<env>/.vector-store
-    // kbDir = <output_dir>/<project>/<env>/kb
-    const envDir = path.dirname(vectorStoreDir); // <output_dir>/<project>/<env>/
+  // 对结果附加 git blame 信息（仅 --blame 时执行）
+  if (blame && topResults.length > 0) {
+    const envDir = path.dirname(vectorStoreDir);
     enrichWithBlame(topResults, path.join(envDir, 'kb'));
   }
 
@@ -213,6 +211,7 @@ if (require.main === module) {
   let dir = process.cwd();
   let branch = 'prod';
   let project = null;
+  let blame = false;
 
   for (const arg of args) {
     if (arg.startsWith('--type=')) type = arg.split('=')[1];
@@ -220,6 +219,7 @@ if (require.main === module) {
     else if (arg.startsWith('--dir=')) dir = arg.split('=')[1];
     else if (arg.startsWith('--branch=')) branch = arg.split('=')[1];
     else if (arg.startsWith('--project=')) project = arg.split('=')[1];
+    else if (arg === '--blame') blame = true;
     else query += (query ? ' ' : '') + arg;
   }
 
@@ -240,7 +240,7 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  search(vectorStore, query, { topK, type })
+  search(vectorStore, query, { topK, type, blame })
     .then(results => {
       if (results.length === 0) {
         console.log('No results found above threshold.');
