@@ -78,13 +78,16 @@ async function indexKb(kbDir, vectorStoreDir, options = {}) {
     const sections = splitByHeadings(doc.body);
     for (const section of sections) {
       if (section.text.trim().length < 20) continue;
+      // 给代码块里的每行加上行号前缀
+      const textWithLineNumbers = addLineNumbers(section.text, section.startLine);
       chunks.push({
-        text: section.text,
+        text: textWithLineNumbers,
         file_path: relativePath,
         heading: section.heading,
         kb_layer: kbLayer,
         summary,
-        source_type: detectSourceType(relativePath)
+        source_type: detectSourceType(relativePath),
+        start_line: section.startLine
       });
     }
   }
@@ -123,7 +126,8 @@ async function indexKb(kbDir, vectorStoreDir, options = {}) {
     heading: chunk.heading || '',
     kb_layer: chunk.kb_layer,
     summary: chunk.summary,
-    source_type: chunk.source_type
+    source_type: chunk.source_type,
+    start_line: chunk.start_line || 0
   }));
 
   if (tableNames.includes('kb')) {
@@ -195,23 +199,46 @@ function splitByHeadings(body) {
   const lines = body.split('\n');
   let currentHeading = '';
   let currentLines = [];
+  let startLine = 1;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (/^#{1,3}\s/.test(line)) {
       if (currentLines.length > 0) {
-        sections.push({ heading: currentHeading, text: currentLines.join('\n') });
+        sections.push({ heading: currentHeading, text: currentLines.join('\n'), startLine });
       }
       currentHeading = line.replace(/^#+\s*/, '');
       currentLines = [line];
+      startLine = i + 1;
     } else {
       currentLines.push(line);
     }
   }
   if (currentLines.length > 0) {
-    sections.push({ heading: currentHeading, text: currentLines.join('\n') });
+    sections.push({ heading: currentHeading, text: currentLines.join('\n'), startLine });
   }
 
   return sections;
+}
+
+function addLineNumbers(text, startLine) {
+  const lines = text.split('\n');
+  let inCodeBlock = false;
+  const result = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('```')) {
+      inCodeBlock = !inCodeBlock;
+      result.push(line);
+    } else if (inCodeBlock) {
+      // 代码块内的行加行号
+      result.push(`${startLine + i}| ${line}`);
+    } else {
+      result.push(line);
+    }
+  }
+  return result.join('\n');
 }
 
 function detectSourceType(relativePath) {
