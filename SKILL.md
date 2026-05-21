@@ -724,10 +724,24 @@ node scripts/incremental.js kb . [--force] [--auto-lm]
 ## v2 搜索流程（`/project-scan search`）
 
 ```bash
-node scripts/unified-search.js "查询内容" [--project=pur-center] [--top=10]
+# 基础搜索
+node scripts/vector-search.js "查询内容" --project=pur-center --branch=test --top=5
+
+# 带作者信息（git blame，多 ~1s）
+node scripts/vector-search.js "查询内容" --project=pur-center --branch=test --top=5 --blame
 ```
 
-跨 3 个项目的向量库搜索，合并排序返回 top-K。
+参数说明：
+- `--project=X` — 指定项目（从 scan-config.yaml 的 projects 读取）
+- `--branch=test|prod` — 指定环境
+- `--top=N` — 返回前 N 条（默认 5）
+- `--blame` — 附加 git blame 作者信息（可选，排查问题时用）
+- `--type=code|business` — 按类型过滤（可选）
+
+跨项目统一搜索：
+```bash
+node scripts/unified-search.js "查询内容" [--project=pur-center] [--top=10]
+```
 
 ## 配置文件位置
 
