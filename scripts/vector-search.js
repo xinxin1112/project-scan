@@ -70,7 +70,86 @@ async function search(vectorStoreDir, query, options = {}) {
   }
 
   allResults.sort((a, b) => b.score - a.score);
-  return allResults.slice(0, topK);
+  const topResults = allResults.slice(0, topK);
+
+  // 对结果附加 git blame 信息（作者）
+  if (topResults.length > 0) {
+    // vectorStoreDir = <output_dir>/<project>/<env>/.vector-store
+    // kbDir = <output_dir>/<project>/<env>/kb
+    const envDir = path.dirname(vectorStoreDir); // <output_dir>/<project>/<env>/
+    enrichWithBlame(topResults, path.join(envDir, 'kb'));
+  }
+
+  return topResults;
+}
+
+const { execSync } = require('child_process');
+const { parse } = require('./frontmatter');
+
+function enrichWithBlame(results, kbDir) {
+  for (const result of results) {
+    try {
+      // 读 KB 文档的 frontmatter 获取源码路径
+      const kbFilePath = path.join(kbDir, result.file_path);
+      if (!fs.existsSync(kbFilePath)) continue;
+
+      const content = fs.readFileSync(kbFilePath, 'utf-8');
+      const doc = parse(content);
+      if (!doc.frontmatter || !doc.frontmatter.sources || doc.frontmatter.sources.length === 0) continue;
+
+      // 解析源码绝对路径：sources 是相对于 KB 文件的
+      const sourceRelPath = doc.frontmatter.sources[0];
+      let sourceAbsPath = path.resolve(path.dirname(kbFilePath), sourceRelPath);
+
+      // 如果解析后不存在，尝试从 .sources/ 目录找
+      if (!fs.existsSync(sourceAbsPath)) {
+        // 从路径中提取 project-test/app/... 部分
+        const sourcesMatch = sourceRelPath.match(/([^/]+-test|[^/]+)\/app\/.+/);
+        if (sourcesMatch) {
+          const outputDir = path.resolve(kbDir, '..', '..', '..');
+          sourceAbsPath = path.join(outputDir, '.sources', sourcesMatch[0]);
+        }
+        if (!fs.existsSync(sourceAbsPath)) continue;
+      }
+
+      // 从 snippet 提取行号（支持 markdown 格式如 **行号：** 103 或 行号：103）
+      const lineMatch = result.snippet.match(/\*{0,2}行号[：:]\*{0,2}\s*(\d+)/);
+      const lineNum = lineMatch ? parseInt(lineMatch[1]) : null;
+      if (!lineNum) continue;
+
+      // 找到源码所在的 git 仓库
+      const sourceDir = findGitRoot(sourceAbsPath);
+      if (!sourceDir) continue;
+
+      const relToRepo = path.relative(sourceDir, sourceAbsPath);
+
+      // git blame 指定行
+      const blameOutput = execSync(
+        `git blame -L ${lineNum},${lineNum} --porcelain -- "${relToRepo}"`,
+        { cwd: sourceDir, timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+      ).toString();
+
+      // 解析 blame 输出获取作者
+      const authorMatch = blameOutput.match(/^author (.+)$/m);
+      if (authorMatch) {
+        result.author = authorMatch[1].trim();
+      }
+    } catch (e) {
+      // blame 失败不影响结果，但输出调试信息到 stderr
+      if (process.env.DEBUG_BLAME) {
+        console.error(`  [blame] ${result.file_path}: ${e.message}`);
+      }
+    }
+  }
+}
+
+function findGitRoot(filePath) {
+  let dir = path.dirname(filePath);
+  while (dir !== path.parse(dir).root) {
+    if (fs.existsSync(path.join(dir, '.git'))) return dir;
+    dir = path.dirname(dir);
+  }
+  return null;
 }
 
 function findVectorStore(startDir) {
