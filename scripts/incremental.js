@@ -274,18 +274,13 @@ if (require.main === module) {
     const outputDir = config.output_dir;
     const envs = branchKey ? [branchKey] : Object.keys(config.branches || { prod: {} });
 
-    console.log('=== 增量更新检查 ===\n');
+    console.log('=== 新鲜度检查 ===\n');
 
-    let totalStale = 0;
-    let totalSkipped = 0;
-    let vectorStale = [];
-    let graphStale = [];
+    const staleProjects = [];
+    const freshProjects = [];
 
     for (const env of envs) {
       for (const project of config.projects) {
-        const kbDir = path.join(outputDir, project.name, env, 'kb');
-        if (!fs.existsSync(kbDir)) continue;
-
         // 确定源码目录
         let repoDir;
         if (env === 'prod') {
@@ -295,86 +290,58 @@ if (require.main === module) {
         }
         if (!fs.existsSync(repoDir)) continue;
 
-        console.log(`--- ${project.name} (${env}) ---`);
+        // 唯一信号：commitsBehind（基于 .gitnexus/meta.json 记录的 commit vs 远程 HEAD）
+        let commitsBehind = 0;
+        try {
+          // 先 fetch 看有没有新 commit（dry-run 不实际拉取）
+          execSync('git fetch --dry-run 2>&1', { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 });
 
-        const edited = detectHumanEdits(kbDir);
-        if (edited.length > 0) {
-          console.log(`  检测到 ${edited.length} 份人工编辑`);
-          for (const e of edited) markHumanEdited(e.file);
-        }
+          // 比对本地 HEAD vs 远程
+          const localHead = execSync('git rev-parse HEAD', { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+          const remoteHead = execSync('git rev-parse FETCH_HEAD', { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
 
-        const { stale, skipped } = findStaleDocuments(kbDir, repoDir);
-        totalSkipped += skipped.length;
-
-        if (stale.length > 0) {
-          totalStale += stale.length;
-          console.log(`  KB 过期: ${stale.length} 份`);
-          for (const s of stale) {
-            console.log(`    ${path.relative(kbDir, s.kbFile)} (${s.changedSource})`);
+          if (localHead !== remoteHead) {
+            commitsBehind = parseInt(execSync(`git rev-list --count ${localHead}..FETCH_HEAD`, { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim()) || 0;
           }
-          if (force) {
-            const results = regenerateStaleDocuments(stale, { repoDir, kbDir, autoLM });
-            console.log(`  → 重生成 ${results.regenerated.length} 份`);
-          }
-        } else {
-          console.log(`  KB ✓ 最新`);
-        }
-
-        // 向量库新鲜度：比对 file-hashes.json
-        const vsDir = path.join(outputDir, project.name, env, '.vector-store');
-        const hashFile = path.join(vsDir, 'file-hashes.json');
-        if (fs.existsSync(vsDir)) {
-          if (!fs.existsSync(hashFile)) {
-            vectorStale.push(`${project.name}/${env}（无 file-hashes.json，需 --full 重建）`);
-            console.log(`  向量库 ⚠ 需重建（无增量记录）`);
-          } else {
-            const storedHashes = JSON.parse(fs.readFileSync(hashFile, 'utf-8'));
-            let changed = 0;
-            walkMd(kbDir, (fp) => {
-              const rel = path.relative(kbDir, fp);
-              const content = fs.readFileSync(fp, 'utf-8');
-              const hash = require('crypto').createHash('md5').update(content).digest('hex').slice(0, 12);
-              if (storedHashes[rel] !== hash) changed++;
-            });
-            if (changed > 0) {
-              vectorStale.push(`${project.name}/${env}（${changed} 份文档变化）`);
-              console.log(`  向量库 ⚠ 过期（${changed} 份文档变化）`);
-            } else {
-              console.log(`  向量库 ✓ 最新`);
-            }
-          }
-        }
-
-        // 图谱新鲜度：比对 git HEAD vs .gitnexus 记录的 commit
-        const gitnexusDir = path.join(repoDir, '.gitnexus');
-        if (fs.existsSync(gitnexusDir)) {
+        } catch (e) {
+          // fetch 失败（网络/shallow clone），回退到本地 .gitnexus 检测
           try {
-            const metaFile = path.join(gitnexusDir, 'meta.json');
+            const metaFile = path.join(repoDir, '.gitnexus', 'meta.json');
             if (fs.existsSync(metaFile)) {
               const meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8'));
               const indexedCommit = meta.lastCommit || meta.commit || '';
               const currentHead = execSync('git rev-parse HEAD', { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
-              if (indexedCommit && currentHead && !currentHead.startsWith(indexedCommit) && !indexedCommit.startsWith(currentHead.slice(0, indexedCommit.length))) {
-                const behind = execSync(`git rev-list --count ${indexedCommit}..HEAD`, { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
-                graphStale.push(`${project.name}/${env}（${behind} commits behind）`);
-                console.log(`  图谱 ⚠ 过期（${behind} commits behind）`);
-              } else {
-                console.log(`  图谱 ✓ 最新`);
+              if (indexedCommit && !currentHead.startsWith(indexedCommit.slice(0, 7))) {
+                commitsBehind = parseInt(execSync(`git rev-list --count ${indexedCommit}..HEAD`, { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim()) || 0;
               }
             }
-          } catch (e) {
-            console.log(`  图谱 ? 无法检测`);
-          }
+          } catch (e2) {}
+        }
+
+        const label = `${project.name} (${env})`;
+        if (commitsBehind > 0) {
+          staleProjects.push({ label, commitsBehind, repoDir, project, env });
+          console.log(`  ⚠ ${label}: ${commitsBehind} commits behind`);
+        } else {
+          freshProjects.push(label);
+          console.log(`  ✓ ${label}: 最新`);
         }
       }
     }
 
     console.log(`\n=== 总结 ===`);
-    console.log(`  KB: ${totalStale} 份过期，${totalSkipped} 份跳过（human_edited）`);
-    console.log(`  向量库: ${vectorStale.length > 0 ? vectorStale.join(', ') : '✓ 全部最新'}`);
-    console.log(`  图谱: ${graphStale.length > 0 ? graphStale.join(', ') : '✓ 全部最新'}`);
-    if (totalStale > 0 && !force) {
-      console.log('  加 --force 执行重生成');
+    if (staleProjects.length === 0) {
+      console.log('  ✓ 全部最新，无需更新');
+    } else {
+      console.log(`  ${staleProjects.length} 个项目需要更新：`);
+      for (const p of staleProjects) {
+        console.log(`    ${p.label} — ${p.commitsBehind} commits`);
+      }
+      console.log(`\n  更新命令：`);
+      console.log(`    1. git pull（拉取代码）`);
+      console.log(`    2. node scripts/scan-all.js ${firstArg} --branch=${envs[0]}（重生成 KB）`);
+      console.log(`    3. node scripts/kb-vector-index.js <kb-dir>（更新向量库）`);
+      console.log(`    4. gitnexus analyze <source-dir> --index-only（更新图谱）`);
     }
   } else {
     // 旧模式：直接传 kbDir repoDir
