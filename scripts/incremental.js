@@ -372,36 +372,69 @@ if (require.main === module) {
             console.log(`     ✗ scan 失败: ${e.message.split('\n')[0]}`);
           }
 
-          // 2.5 层次 2 增量（只对新增/修改的 flow 文档触发）
-          if (autoLM) {
-            try {
-              const kbDir = path.join(outputDir, p.project.name, p.env, 'kb');
-              const flowDirs = [];
-              if (fs.existsSync(kbDir)) {
-                for (const mod of fs.readdirSync(kbDir, { withFileTypes: true })) {
-                  if (mod.isDirectory()) {
-                    const flowDir = path.join(kbDir, mod.name, 'flows');
-                    if (fs.existsSync(flowDir)) flowDirs.push(flowDir);
-                  }
-                }
-              }
-              // 找出没有层次 2 标记的 flow 文档（新增的或还没跑过层次 2 的）
-              let level2Candidates = 0;
-              for (const flowDir of flowDirs) {
+          // 2.5 层次 2 增量检测
+          try {
+            const kbDir = path.join(outputDir, p.project.name, p.env, 'kb');
+            const level2Candidates = [];
+            if (fs.existsSync(kbDir)) {
+              for (const mod of fs.readdirSync(kbDir, { withFileTypes: true })) {
+                if (!mod.isDirectory()) continue;
+                const flowDir = path.join(kbDir, mod.name, 'flows');
+                if (!fs.existsSync(flowDir)) continue;
                 for (const f of fs.readdirSync(flowDir)) {
                   if (!f.endsWith('.md')) continue;
-                  const content = fs.readFileSync(path.join(flowDir, f), 'utf-8');
-                  // 没有"条件分支流程"标记 = 还是层次 1，可以升级
-                  if (!content.includes('## 条件分支流程') && content.includes('调用服务数')) {
-                    level2Candidates++;
+                  const fp = path.join(flowDir, f);
+                  const content = fs.readFileSync(fp, 'utf-8');
+                  // 满足层次 2 条件：有"调用服务数"（是 flow）但没有"条件分支流程"（还是层次 1）
+                  // 且调用服务数 >= 2 或有状态变更
+                  const svcMatch = content.match(/调用服务数[：:]\s*(\d+)/);
+                  const hasStatusChange = content.includes('触发状态变更：** 是');
+                  const svcCount = svcMatch ? parseInt(svcMatch[1]) : 0;
+                  if ((svcCount >= 2 || hasStatusChange) && !content.includes('## 条件分支流程')) {
+                    level2Candidates.push({ file: fp, module: mod.name, name: f });
                   }
                 }
               }
-              if (level2Candidates > 0) {
-                console.log(`  2.5 层次 2: ${level2Candidates} 份 flow 可升级（需 --auto-lm）`);
+            }
+            if (level2Candidates.length > 0) {
+              if (autoLM) {
+                console.log(`  2.5 层次 2: 升级 ${level2Candidates.length} 份 flow...`);
+                // 执行层次 2 生成
+                try {
+                  const { buildPromptForMethod } = require('./flow-level2-builder');
+                  for (const candidate of level2Candidates) {
+                    // 从 flow 文档的 frontmatter 读取 Controller 信息
+                    const { parse } = require('./frontmatter');
+                    const doc = parse(fs.readFileSync(candidate.file, 'utf-8'));
+                    if (!doc.frontmatter || !doc.frontmatter.sources || doc.frontmatter.sources.length === 0) continue;
+                    const sourceFile = path.resolve(path.dirname(candidate.file), doc.frontmatter.sources[0]);
+                    if (!fs.existsSync(sourceFile)) continue;
+
+                    // 提取方法名（从文件名推断）
+                    const methodName = candidate.name.replace('.md', '').replace(/-/g, '');
+
+                    // 写 prompt 到 pending 目录（由用户或自动化工具执行 LLM 调用）
+                    const promptDir = path.join(outputDir, '.scratch', 'prompts', 'pending');
+                    fs.mkdirSync(promptDir, { recursive: true });
+                    const promptFile = path.join(promptDir, `${p.project.name}-${candidate.module}-${candidate.name}.json`);
+                    fs.writeFileSync(promptFile, JSON.stringify({
+                      project: p.project.name,
+                      module: candidate.module,
+                      flow: candidate.name,
+                      sourceFile,
+                      methodName,
+                      kbFile: candidate.file
+                    }, null, 2));
+                  }
+                  console.log(`     ✓ ${level2Candidates.length} 份 prompt 已生成`);
+                } catch (e) {
+                  console.log(`     ✗ 层次 2 失败: ${e.message}`);
+                }
+              } else {
+                console.log(`  2.5 层次 2: ${level2Candidates.length} 份 flow 可升级（加 --auto-lm 执行）`);
               }
-            } catch (e) {}
-          }
+            }
+          } catch (e) {}
 
           // 3. kb-vector-index.js（增量）
           try {
