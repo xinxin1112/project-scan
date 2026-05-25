@@ -252,9 +252,9 @@ node scripts/kb-vector-index.js <kb-dir> <vector-store-dir> &
 | 命令 | 说明 | 脚本 |
 |------|------|------|
 | `/project-scan` | 全量扫描所有项目 | `node scripts/scan-all.js` |
-| `/project-scan update` | 增量更新（只重生成过期文档） | `node scripts/incremental.js` |
-| `/project-scan update --force` | 强制重生成（含 human_edited） | `node scripts/incremental.js --force` |
-| `/project-scan update --auto-lm` | 增量 + 自动调 LM 重生成层次2 flow | `node scripts/incremental.js --auto-lm` |
+| `/project-scan update` | 一键增量更新（检测 + pull + scan + vector + graph） | `node scripts/incremental.js <config> --update` |
+| `/project-scan update --force` | 强制重生成（含 human_edited） | `node scripts/incremental.js <config> --update --force` |
+| `/project-scan update --auto-lm` | 增量 + 层次 2 升级 | `node scripts/incremental.js <config> --update --auto-lm` |
 | `/project-scan search <query>` | 跨项目语义搜索 | `node scripts/unified-search.js <query>` |
 | `/project-scan search <query> --project=X` | 只搜指定项目 | `node scripts/unified-search.js <query> --project=X` |
 | `/project-scan check` | 新鲜度检查（交互式） | `node scripts/freshness.js --force` |
@@ -683,43 +683,27 @@ node scripts/scan-all.js /Users/a6667/bilibili/project-scan/scan-config.yaml
 
 ### 执行
 
+一键更新（检测 + pull + scan + vector + graph）：
 ```bash
-node scripts/incremental.js kb . [--force] [--auto-lm]
+# 更新所有分支（prod + test）
+node scripts/incremental.js /Users/a6667/bilibili/project-scan/scan-config.yaml --update
+
+# 只更新测试环境
+node scripts/incremental.js /Users/a6667/bilibili/project-scan/scan-config.yaml --branch=test --update
+
+# 更新 + 层次 2 升级
+node scripts/incremental.js /Users/a6667/bilibili/project-scan/scan-config.yaml --update --auto-lm
 ```
 
-内部流程：
-1. 确定源码路径：prod → `.sources/<project>/`，test → `.sources/<project>-test/`（worktree，不切分支）
-2. 在对应 worktree 里 `git pull` 拉最新代码
-3. 检测人工编辑（body hash 比对）→ 自动标记 human_edited
-2. git diff 找过期文档（sources 反向索引）
-3. 分类：
-   - 层次 1（纯脚本）→ 直接重生成
-   - 层次 2（含条件分支/联动）→ 看 `scan-config.yaml` 的 `level2` 配置：
-     - `level2.backend.auto_update: true` → 自动重生成后端层次 2
-     - `level2.frontend.auto_update: true` → 自动重生成前端层次 2
-     - 两者都为 false → 跳过层次 2（除非显式传 `--auto-lm`）
-4. 跳过 human_edited 文档（除非 `--force`）
-5. 重建向量库：`kb-vector-index.js`（增量模式，只 embed 变化的文档）
-   - **如果 KB 文档没有变化（scan-all.js 输出 0 份新文档），跳过向量库重建**
-   - 如果有新增/修改的 KB 文档 → 自动增量重建
-6. 层次 2 判断：
-   - **如果有新增的 Controller 方法或新模块** → 重新检测核心方法 → 重跑层次 2
-   - **如果只是已有文件的修改**（method-index 更新但无新 Controller）→ 跳过层次 2
-   - 判断依据：`scan-all.js` 输出的新文档数 > 0 且包含 contracts 类型
-7. GitNexus 图谱同步：`gitnexus analyze <source-dir> --index-only`
-   - commit 没变 → 1.5 秒跳过
-   - commit 变了 → 全量重建图谱（约 2.5 分钟）
-   - **重建前必须停止 `gitnexus serve` 和 `gitnexus mcp` 进程**（否则数据库锁冲突）：
-     ```bash
-     # 检查并停止占锁进程
-     pkill -f "gitnexus serve" 2>/dev/null
-     pkill -f "gitnexus mcp" 2>/dev/null
-     sleep 1
-     # 重建
-     gitnexus analyze <source-dir> --index-only
-     # 重建完成后重启 MCP
-     nohup gitnexus mcp > /dev/null 2>&1 &
-     ```
+内部流程（`--update` 自动执行）：
+1. `commitsBehind` 检测每个项目是否有新 commit
+2. 对过期项目自动执行：
+   - `git pull`（拉最新代码）
+   - `scan-all.js --project=X --branch=Y`（重生成 KB，覆盖写入）
+   - 层次 2 检测（满足条件的 flow 报告/升级）
+   - `kb-vector-index.js`（增量向量库，只 embed 变化的文档）
+   - `gitnexus analyze`（增量图谱，自动处理锁冲突）
+3. 重启 gitnexus mcp
 
 ## v2 搜索流程（`/project-scan search`）
 
