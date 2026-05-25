@@ -372,6 +372,37 @@ if (require.main === module) {
             console.log(`     ✗ scan 失败: ${e.message.split('\n')[0]}`);
           }
 
+          // 2.5 层次 2 增量（只对新增/修改的 flow 文档触发）
+          if (autoLM) {
+            try {
+              const kbDir = path.join(outputDir, p.project.name, p.env, 'kb');
+              const flowDirs = [];
+              if (fs.existsSync(kbDir)) {
+                for (const mod of fs.readdirSync(kbDir, { withFileTypes: true })) {
+                  if (mod.isDirectory()) {
+                    const flowDir = path.join(kbDir, mod.name, 'flows');
+                    if (fs.existsSync(flowDir)) flowDirs.push(flowDir);
+                  }
+                }
+              }
+              // 找出没有层次 2 标记的 flow 文档（新增的或还没跑过层次 2 的）
+              let level2Candidates = 0;
+              for (const flowDir of flowDirs) {
+                for (const f of fs.readdirSync(flowDir)) {
+                  if (!f.endsWith('.md')) continue;
+                  const content = fs.readFileSync(path.join(flowDir, f), 'utf-8');
+                  // 没有"条件分支流程"标记 = 还是层次 1，可以升级
+                  if (!content.includes('## 条件分支流程') && content.includes('调用服务数')) {
+                    level2Candidates++;
+                  }
+                }
+              }
+              if (level2Candidates > 0) {
+                console.log(`  2.5 层次 2: ${level2Candidates} 份 flow 可升级（需 --auto-lm）`);
+              }
+            } catch (e) {}
+          }
+
           // 3. kb-vector-index.js（增量）
           try {
             const kbDir = path.join(outputDir, p.project.name, p.env, 'kb');
