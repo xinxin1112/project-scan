@@ -278,6 +278,8 @@ if (require.main === module) {
 
     let totalStale = 0;
     let totalSkipped = 0;
+    let vectorStale = [];
+    let graphStale = [];
 
     for (const env of envs) {
       for (const project of config.projects) {
@@ -306,7 +308,7 @@ if (require.main === module) {
 
         if (stale.length > 0) {
           totalStale += stale.length;
-          console.log(`  过期: ${stale.length} 份`);
+          console.log(`  KB 过期: ${stale.length} 份`);
           for (const s of stale) {
             console.log(`    ${path.relative(kbDir, s.kbFile)} (${s.changedSource})`);
           }
@@ -315,12 +317,62 @@ if (require.main === module) {
             console.log(`  → 重生成 ${results.regenerated.length} 份`);
           }
         } else {
-          console.log(`  ✓ 最新`);
+          console.log(`  KB ✓ 最新`);
+        }
+
+        // 向量库新鲜度：比对 file-hashes.json
+        const vsDir = path.join(outputDir, project.name, env, '.vector-store');
+        const hashFile = path.join(vsDir, 'file-hashes.json');
+        if (fs.existsSync(vsDir)) {
+          if (!fs.existsSync(hashFile)) {
+            vectorStale.push(`${project.name}/${env}（无 file-hashes.json，需 --full 重建）`);
+            console.log(`  向量库 ⚠ 需重建（无增量记录）`);
+          } else {
+            const storedHashes = JSON.parse(fs.readFileSync(hashFile, 'utf-8'));
+            let changed = 0;
+            walkMd(kbDir, (fp) => {
+              const rel = path.relative(kbDir, fp);
+              const content = fs.readFileSync(fp, 'utf-8');
+              const hash = require('crypto').createHash('md5').update(content).digest('hex').slice(0, 12);
+              if (storedHashes[rel] !== hash) changed++;
+            });
+            if (changed > 0) {
+              vectorStale.push(`${project.name}/${env}（${changed} 份文档变化）`);
+              console.log(`  向量库 ⚠ 过期（${changed} 份文档变化）`);
+            } else {
+              console.log(`  向量库 ✓ 最新`);
+            }
+          }
+        }
+
+        // 图谱新鲜度：比对 git HEAD vs .gitnexus 记录的 commit
+        const gitnexusDir = path.join(repoDir, '.gitnexus');
+        if (fs.existsSync(gitnexusDir)) {
+          try {
+            const metaFile = path.join(gitnexusDir, 'meta.json');
+            if (fs.existsSync(metaFile)) {
+              const meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8'));
+              const indexedCommit = meta.lastCommit || meta.commit || '';
+              const currentHead = execSync('git rev-parse HEAD', { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+              if (indexedCommit && currentHead && !currentHead.startsWith(indexedCommit) && !indexedCommit.startsWith(currentHead.slice(0, indexedCommit.length))) {
+                const behind = execSync(`git rev-list --count ${indexedCommit}..HEAD`, { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+                graphStale.push(`${project.name}/${env}（${behind} commits behind）`);
+                console.log(`  图谱 ⚠ 过期（${behind} commits behind）`);
+              } else {
+                console.log(`  图谱 ✓ 最新`);
+              }
+            }
+          } catch (e) {
+            console.log(`  图谱 ? 无法检测`);
+          }
         }
       }
     }
 
-    console.log(`\n=== 总结：${totalStale} 份过期，${totalSkipped} 份跳过（human_edited） ===`);
+    console.log(`\n=== 总结 ===`);
+    console.log(`  KB: ${totalStale} 份过期，${totalSkipped} 份跳过（human_edited）`);
+    console.log(`  向量库: ${vectorStale.length > 0 ? vectorStale.join(', ') : '✓ 全部最新'}`);
+    console.log(`  图谱: ${graphStale.length > 0 ? graphStale.join(', ') : '✓ 全部最新'}`);
     if (totalStale > 0 && !force) {
       console.log('  加 --force 执行重生成');
     }
