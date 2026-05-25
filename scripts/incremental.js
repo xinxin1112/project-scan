@@ -259,6 +259,7 @@ if (require.main === module) {
   const args = process.argv.slice(2);
   const force = args.includes('--force');
   const autoLM = args.includes('--auto-lm');
+  const update = args.includes('--update');
   const branchArg = args.find(a => a.startsWith('--branch='));
   const branchKey = branchArg ? branchArg.split('=')[1] : null;
   const positionalArgs = args.filter(a => !a.startsWith('--'));
@@ -337,11 +338,89 @@ if (require.main === module) {
       for (const p of staleProjects) {
         console.log(`    ${p.label} — ${p.commitsBehind} commits`);
       }
-      console.log(`\n  更新命令：`);
-      console.log(`    1. git pull（拉取代码）`);
-      console.log(`    2. node scripts/scan-all.js ${firstArg} --branch=${envs[0]}（重生成 KB）`);
-      console.log(`    3. node scripts/kb-vector-index.js <kb-dir>（更新向量库）`);
-      console.log(`    4. gitnexus analyze <source-dir> --index-only（更新图谱）`);
+
+      if (update) {
+        // --update 模式：自动执行全流程
+        console.log(`\n=== 开始自动更新 ===\n`);
+        const scriptDir = __dirname;
+        let graphNeedsRestart = false;
+
+        for (const p of staleProjects) {
+          console.log(`--- 更新 ${p.label} ---`);
+
+          // 1. git pull
+          try {
+            console.log('  1. git pull...');
+            execSync('git pull', { cwd: p.repoDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 });
+            console.log('     ✓');
+          } catch (e) {
+            console.log(`     ✗ pull 失败: ${e.message.split('\n')[0]}`);
+            continue; // 跳过这个项目
+          }
+
+          // 2. scan-all.js（只扫该项目）
+          try {
+            console.log(`  2. scan-all.js --project=${p.project.name} --branch=${p.env}...`);
+            const scanResult = execSync(
+              `node ${path.join(scriptDir, 'scan-all.js')} ${firstArg} --project=${p.project.name} --branch=${p.env}`,
+              { cwd: scriptDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 300000 }
+            ).toString();
+            const newDocsMatch = scanResult.match(/(\d+) 份文档/);
+            const newDocs = newDocsMatch ? newDocsMatch[1] : '0';
+            console.log(`     ✓ (${newDocs} 份新文档)`);
+          } catch (e) {
+            console.log(`     ✗ scan 失败: ${e.message.split('\n')[0]}`);
+          }
+
+          // 3. kb-vector-index.js（增量）
+          try {
+            const kbDir = path.join(outputDir, p.project.name, p.env, 'kb');
+            if (fs.existsSync(kbDir)) {
+              console.log('  3. 向量库增量更新...');
+              execSync(
+                `node ${path.join(scriptDir, 'kb-vector-index.js')} ${kbDir}`,
+                { cwd: scriptDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 300000 }
+              );
+              console.log('     ✓');
+            }
+          } catch (e) {
+            console.log(`     ✗ 向量库失败: ${e.message.split('\n')[0]}`);
+          }
+
+          // 4. gitnexus analyze（增量）
+          try {
+            console.log('  4. 图谱增量更新...');
+            if (!graphNeedsRestart) {
+              // 第一次更新图谱时停掉 gitnexus 进程
+              try { execSync('pkill -f "gitnexus serve" 2>/dev/null', { stdio: 'pipe' }); } catch (e) {}
+              try { execSync('pkill -f "gitnexus mcp" 2>/dev/null', { stdio: 'pipe' }); } catch (e) {}
+              graphNeedsRestart = true;
+              // 等进程释放锁
+              execSync('sleep 1');
+            }
+            execSync(
+              `gitnexus analyze ${p.repoDir} --index-only`,
+              { stdio: ['pipe', 'pipe', 'pipe'], timeout: 300000 }
+            );
+            console.log('     ✓');
+          } catch (e) {
+            console.log(`     ✗ 图谱失败: ${e.message.split('\n')[0]}`);
+          }
+        }
+
+        // 重启 gitnexus mcp
+        if (graphNeedsRestart) {
+          try {
+            execSync('nohup gitnexus mcp > /dev/null 2>&1 &', { stdio: 'pipe' });
+            console.log('\n  GitNexus MCP 已重启');
+          } catch (e) {}
+        }
+
+        console.log(`\n=== 更新完成 ===`);
+      } else {
+        console.log(`\n  更新命令：`);
+        console.log(`    node scripts/incremental.js ${firstArg} --branch=${envs[0]} --update`);
+      }
     }
   } else {
     // 旧模式：直接传 kbDir repoDir
