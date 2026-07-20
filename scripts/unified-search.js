@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+/**
+ * @deprecated Use hybrid-search.js instead.
+ * This script has hardcoded paths that don't match the v2 directory structure
+ * (<project>/<branch>/.vector-store). It silently returns empty results.
+ * Kept for reference only — will be removed in a future cleanup.
+ */
 const path = require('path');
 const lancedb = require('@lancedb/lancedb');
 const { detectProvider, embedBatch } = require('./embed');
