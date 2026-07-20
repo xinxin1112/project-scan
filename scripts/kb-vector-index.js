@@ -134,22 +134,31 @@ async function indexKb(kbDir, vectorStoreDir, options = {}) {
 
   if (tableNames.includes('kb')) {
     if (incremental && existingMeta) {
-      // Schema mismatch detection: if table lacks fields present in new data, force full rebuild
+      // 维度/模型变更检测：不一致则强制全量重建
       let schemaMismatch = false;
-      try {
-        const table = await db.openTable('kb');
-        const schema = await table.schema;
-        const existingFields = new Set(schema.fields.map(f => f.name));
-        const newFields = Object.keys(data[0] || {});
-        for (const field of newFields) {
-          if (!existingFields.has(field)) {
-            console.log(`  schema 不兼容（新字段 "${field}"），强制全量重建`);
-            schemaMismatch = true;
-            break;
-          }
-        }
-      } catch (e) {
+      const currentModel = `${provider.provider}/${provider.model}`;
+      if (existingMeta.dimensions !== provider.dimensions || existingMeta.embedding_model !== currentModel) {
+        console.log(`  模型/维度变更（${existingMeta.embedding_model} ${existingMeta.dimensions}d → ${currentModel} ${provider.dimensions}d），强制全量重建`);
         schemaMismatch = true;
+      }
+
+      // Schema mismatch detection: if table lacks fields present in new data, force full rebuild
+      if (!schemaMismatch) {
+        try {
+          const table = await db.openTable('kb');
+          const schema = await table.schema;
+          const existingFields = new Set(schema.fields.map(f => f.name));
+          const newFields = Object.keys(data[0] || {});
+          for (const field of newFields) {
+            if (!existingFields.has(field)) {
+              console.log(`  schema 不兼容（新字段 "${field}"），强制全量重建`);
+              schemaMismatch = true;
+              break;
+            }
+          }
+        } catch (e) {
+          schemaMismatch = true;
+        }
       }
 
       if (schemaMismatch) {

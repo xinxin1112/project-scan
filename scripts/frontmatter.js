@@ -129,7 +129,12 @@ function writeDocument(filePath, frontmatter, body) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+  if (fs.existsSync(filePath)) {
+    const existing = parse(fs.readFileSync(filePath, 'utf-8'));
+    if (existing?.frontmatter?.human_edited) return false;
+  }
   fs.writeFileSync(filePath, serialize(frontmatter, body), 'utf-8');
+  return true;
 }
 
 function readDocument(filePath) {

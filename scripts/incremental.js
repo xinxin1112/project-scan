@@ -319,9 +319,17 @@ function regenerateFlowLevel2(staleDoc, repoDir) {
   const builderPath = path.join(__dirname, 'flow-level2-builder.js');
   const { buildPromptForMethod } = require(builderPath);
 
-  const sourceDir = path.join(repoDir, 'app/pur-reconcile/src/main/java');
-  const enumDir = path.join(repoDir, 'app/pur-common/src/main/java/com/bilibili/purchase/common/enums');
-  const controllerFile = path.join(repoDir, controllerSource);
+  const controllerFile = path.resolve(repoDir, controllerSource);
+  if (!fs.existsSync(controllerFile)) return;
+
+  // 从 controllerFile 路径动态推断 sourceDir（截取到 src/main/java）
+  const javaIdx = controllerFile.indexOf('/src/main/java/');
+  const sourceDir = javaIdx !== -1 ? controllerFile.slice(0, javaIdx + '/src/main/java'.length) : path.dirname(controllerFile);
+
+  // 动态搜索 enums 目录（同仓下 common/enums 或 enums）
+  let enumDir = '';
+  const commonEnums = findEnumDir(repoDir);
+  if (commonEnums) enumDir = commonEnums;
 
   const prompt = buildPromptForMethod(controllerFile, methodName, sourceDir, enumDir);
   if (!prompt) return;
@@ -336,6 +344,40 @@ function regenerateFlowLevel2(staleDoc, repoDir) {
 
   console.log(`    → 层次 2 prompt 已生成: .scratch/prompts/pending/${methodName}.txt`);
   console.log(`      需要调 LM API 生成文档（或手动用 Claude 分析）`);
+}
+
+function findEnumDir(repoDir) {
+  // 搜索 repoDir 下 **/common/enums 或 **/enums 目录
+  const candidates = [];
+  try {
+    const apps = fs.readdirSync(repoDir).filter(d => {
+      const fp = path.join(repoDir, d);
+      return fs.statSync(fp).isDirectory() && !d.startsWith('.');
+    });
+    for (const app of apps) {
+      const commonEnums = path.join(repoDir, app, 'src/main/java');
+      if (!fs.existsSync(commonEnums)) continue;
+      // 递归找 enums 目录（最多 4 层）
+      const found = findDirRecursive(commonEnums, 'enums', 4);
+      if (found) candidates.push(found);
+    }
+  } catch (e) {}
+  // 优先含 common 的路径
+  return candidates.find(c => c.includes('common')) || candidates[0] || '';
+}
+
+function findDirRecursive(base, target, maxDepth) {
+  if (maxDepth <= 0) return null;
+  try {
+    const entries = fs.readdirSync(base, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (e.name === target) return path.join(base, e.name);
+      const found = findDirRecursive(path.join(base, e.name), target, maxDepth - 1);
+      if (found) return found;
+    }
+  } catch (e) {}
+  return null;
 }
 
 if (require.main === module) {
@@ -357,6 +399,16 @@ if (require.main === module) {
     // 新模式：读 scan-config.yaml，遍历所有项目
     const yaml = require('js-yaml');
     const config = yaml.load(fs.readFileSync(firstArg, 'utf-8'));
+
+    if (!config.projects || !Array.isArray(config.projects)) {
+      console.error('scan-config.yaml 缺少 projects 字段');
+      process.exit(1);
+    }
+    if (!config.output_dir) {
+      console.error('scan-config.yaml 缺少 output_dir 字段');
+      process.exit(1);
+    }
+
     const outputDir = config.output_dir;
     const envs = branchKey ? [branchKey] : Object.keys(config.branches || { prod: {} });
 
@@ -436,7 +488,8 @@ if (require.main === module) {
       }
 
       if (update) {
-        // --update 模式：自动执行全流程
+        // --update 模式：自动执行全流程（含 async LLM 调用）
+        (async () => {
         console.log(`\n=== 开始自动更新 ===\n`);
         const scriptDir = __dirname;
         let graphNeedsRestart = false;
@@ -462,13 +515,23 @@ if (require.main === module) {
           // 2. scan-all.js（只扫该项目）
           try {
             console.log(`  2. scan-all.js --project=${p.project.name} --branch=${p.env}...`);
-            const scanResult = execSync(
+            execSync(
               `node ${path.join(scriptDir, 'scan-all.js')} ${firstArg} --project=${p.project.name} --branch=${p.env}`,
               { cwd: scriptDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 300000, maxBuffer: 64 * 1024 * 1024 }
-            ).toString();
-            const newDocsMatch = scanResult.match(/(\d+) 份文档/);
-            const newDocs = newDocsMatch ? newDocsMatch[1] : '?';
-            console.log(`     ✓ (${newDocs} 份新文档)`);
+            );
+            // 直接统计 kb 目录下 .md 文件数（比解析 stdout 稳定）
+            const kbDir = path.join(outputDir, p.project.name, p.env, 'kb');
+            let docCount = 0;
+            if (fs.existsSync(kbDir)) {
+              const countMd = (dir) => {
+                for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                  if (e.isDirectory()) countMd(path.join(dir, e.name));
+                  else if (e.name.endsWith('.md')) docCount++;
+                }
+              };
+              countMd(kbDir);
+            }
+            console.log(`     ✓ (${docCount} 份文档)`);
           } catch (e) {
             console.log(`     ✗ scan 失败: ${e.message.split('\n')[0]}`);
             hasFailures = true;
@@ -501,43 +564,46 @@ if (require.main === module) {
             }
             if (level2Candidates.length > 0) {
               if (autoLM) {
-                console.log(`  2.5 层次 2: 升级 ${level2Candidates.length} 份 flow...`);
-                // 执行层次 2 生成
+                console.log(`  2.5 层次 2: 升级 ${level2Candidates.length} 份 flow（调 LLM）...`);
+                const { loadConfig, generateLevel2ForCandidate } = require('./flow-level2-llm');
+                let llmConfig;
                 try {
-                  const { buildPromptForMethod } = require('./flow-level2-builder');
-                  for (const candidate of level2Candidates) {
-                    // 从 flow 文档的 frontmatter 读取 Controller 信息
-                    const { parse } = require('./frontmatter');
-                    const doc = parse(fs.readFileSync(candidate.file, 'utf-8'));
-                    if (!doc.frontmatter || !doc.frontmatter.sources || doc.frontmatter.sources.length === 0) continue;
-                    const sourceFile = path.resolve(path.dirname(candidate.file), doc.frontmatter.sources[0]);
-                    if (!fs.existsSync(sourceFile)) continue;
-
-                    // 提取方法名（从文件名推断，kebab-to-camelCase）
-                    const methodName = candidate.name.replace('.md', '').replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-
-                    // 写 prompt 到 pending 目录（由用户或自动化工具执行 LLM 调用）
-                    const promptDir = path.join(outputDir, '.scratch', 'prompts', 'pending');
-                    fs.mkdirSync(promptDir, { recursive: true });
-                    const promptFile = path.join(promptDir, `${p.project.name}-${candidate.module}-${candidate.name}.json`);
-                    fs.writeFileSync(promptFile, JSON.stringify({
-                      project: p.project.name,
-                      module: candidate.module,
-                      flow: candidate.name,
-                      sourceFile,
-                      methodName,
-                      kbFile: candidate.file
-                    }, null, 2));
-                  }
-                  console.log(`     ✓ ${level2Candidates.length} 份 prompt 已生成`);
+                  llmConfig = loadConfig();
                 } catch (e) {
-                  console.log(`     ✗ 层次 2 失败: ${e.message}`);
+                  console.log(`     ✗ LLM 配置加载失败: ${e.message}`);
+                  hasFailures = true;
+                  llmConfig = null;
+                }
+                if (llmConfig) {
+                  const concurrency = parseInt(process.env.LEVEL2_CONCURRENCY) || 2;
+                  let generated = 0;
+                  for (let i = 0; i < level2Candidates.length; i += concurrency) {
+                    const batch = level2Candidates.slice(i, i + concurrency);
+                    const results = await Promise.allSettled(
+                      batch.map(candidate => generateLevel2ForCandidate(candidate, p.repoDir, llmConfig))
+                    );
+                    for (let j = 0; j < results.length; j++) {
+                      const candidate = batch[j];
+                      const r = results[j];
+                      if (r.status === 'fulfilled') {
+                        generated++;
+                        console.log(`     ✓ ${candidate.module}/${candidate.name} → ${r.value.model} (${r.value.complexity})`);
+                      } else {
+                        console.log(`     ✗ ${candidate.module}/${candidate.name}: ${r.reason?.message || r.reason}`);
+                        hasFailures = true;
+                      }
+                    }
+                  }
+                  console.log(`     层次 2 完成: ${generated}/${level2Candidates.length} 成功（= ${generated} 次 API 调用，并发 ${concurrency}）`);
                 }
               } else {
                 console.log(`  2.5 层次 2: ${level2Candidates.length} 份 flow 可升级（加 --auto-lm 执行）`);
               }
             }
-          } catch (e) {}
+          } catch (e) {
+            console.log(`  2.5 层次2 异常: ${e.message.split('\n')[0]}`);
+            hasFailures = true;
+          }
 
           // 3. kb-vector-index.js（增量）
           try {
@@ -595,6 +661,7 @@ if (require.main === module) {
           console.log('  ⚠ 部分步骤失败，详见上方 ✗ 标记');
           process.exit(1);
         }
+        })().catch(e => { console.error('更新失败:', e.message); process.exit(1); });
       } else {
         console.log(`\n  更新命令：`);
         console.log(`    node scripts/incremental.js ${firstArg} --branch=${envs[0]} --update`);
