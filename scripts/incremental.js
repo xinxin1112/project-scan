@@ -192,21 +192,104 @@ function regenerateStaleDocuments(staleDocs, options = {}) {
           results.regenerated.push({ file: staleDoc.kbFile, type: 'flow-level2', method: 'LM' });
           break;
 
-        case 'flow-level1':
-          // 纯脚本：flow-generator.js 重跑该方法
+        case 'flow-level1': {
+          const { generateFlowDocs } = require('./flow-generator');
+          const doc = readDocument(staleDoc.kbFile);
+          const sources = doc?.frontmatter?.sources || [];
+          if (sources.length > 0) {
+            const sourceFile = path.resolve(repoDir, sources[0]);
+            if (fs.existsSync(sourceFile)) {
+              generateFlowDocs(sourceFile, path.dirname(staleDoc.kbFile));
+            }
+          }
           results.regenerated.push({ file: staleDoc.kbFile, type: 'flow-level1', method: 'script' });
           break;
+        }
 
-        case 'entity':
-        case 'enum':
-        case 'state-machine':
-        case 'contract':
-        case 'method-index':
+        case 'entity': {
+          const { generateEntityDoc } = require('./entity-generator');
+          const doc = readDocument(staleDoc.kbFile);
+          const sources = doc?.frontmatter?.sources || [];
+          if (sources.length > 0) {
+            const sourceFile = path.resolve(repoDir, sources[0]);
+            if (fs.existsSync(sourceFile)) {
+              generateEntityDoc(sourceFile, staleDoc.kbFile);
+            }
+          }
+          results.regenerated.push({ file: staleDoc.kbFile, type: 'entity', method: 'script' });
+          break;
+        }
+
+        case 'enum': {
+          const { generateEnumDoc } = require('./enum-generator');
+          const doc = readDocument(staleDoc.kbFile);
+          const sources = doc?.frontmatter?.sources || [];
+          if (sources.length > 0) {
+            const sourceFile = path.resolve(repoDir, sources[0]);
+            if (fs.existsSync(sourceFile)) {
+              generateEnumDoc(sourceFile, staleDoc.kbFile);
+            }
+          }
+          results.regenerated.push({ file: staleDoc.kbFile, type: 'enum', method: 'script' });
+          break;
+        }
+
+        case 'state-machine': {
+          const { generateStateMachineDoc } = require('./state-machine-generator');
+          const doc = readDocument(staleDoc.kbFile);
+          const sources = doc?.frontmatter?.sources || [];
+          if (sources.length > 0) {
+            const sourceFile = path.resolve(repoDir, sources[0]);
+            if (fs.existsSync(sourceFile)) {
+              generateStateMachineDoc(sourceFile, staleDoc.kbFile);
+            }
+          }
+          results.regenerated.push({ file: staleDoc.kbFile, type: 'state-machine', method: 'script' });
+          break;
+        }
+
+        case 'contract': {
+          const { generateContractDoc } = require('./contract-generator');
+          const doc = readDocument(staleDoc.kbFile);
+          const sources = doc?.frontmatter?.sources || [];
+          if (sources.length > 0) {
+            const sourceFile = path.resolve(repoDir, sources[0]);
+            if (fs.existsSync(sourceFile)) {
+              generateContractDoc(sourceFile, staleDoc.kbFile);
+            }
+          }
+          results.regenerated.push({ file: staleDoc.kbFile, type: 'contract', method: 'script' });
+          break;
+        }
+
+        case 'method-index': {
+          const { generateMethodIndex } = require('./method-index-generator');
+          const doc = readDocument(staleDoc.kbFile);
+          const sources = doc?.frontmatter?.sources || [];
+          if (sources.length > 0) {
+            const sourceFile = path.resolve(repoDir, sources[0]);
+            if (fs.existsSync(sourceFile)) {
+              generateMethodIndex(sourceFile, staleDoc.kbFile);
+            }
+          }
+          results.regenerated.push({ file: staleDoc.kbFile, type: 'method-index', method: 'script' });
+          break;
+        }
+
         case 'error-codes':
-        case 'rules':
-          // 纯脚本重生成
+        case 'rules': {
+          const { generateRulesDoc } = require('./rules-generator');
+          const doc = readDocument(staleDoc.kbFile);
+          const sources = doc?.frontmatter?.sources || [];
+          if (sources.length > 0) {
+            const sourceFile = path.resolve(repoDir, sources[0]);
+            if (fs.existsSync(sourceFile)) {
+              generateRulesDoc(sourceFile, staleDoc.kbFile);
+            }
+          }
           results.regenerated.push({ file: staleDoc.kbFile, type: classification.type, method: 'script' });
           break;
+        }
 
         default:
           results.errors.push({ file: staleDoc.kbFile, reason: '未知文档类型' });
@@ -262,6 +345,8 @@ if (require.main === module) {
   const update = args.includes('--update');
   const branchArg = args.find(a => a.startsWith('--branch='));
   const branchKey = branchArg ? branchArg.split('=')[1] : null;
+  const projectArg = args.find(a => a.startsWith('--project='));
+  const projectFilter = projectArg ? projectArg.split('=')[1] : null;
   const positionalArgs = args.filter(a => !a.startsWith('--'));
 
   // 判断第一个参数是 config 文件还是 kb 目录
@@ -282,6 +367,7 @@ if (require.main === module) {
 
     for (const env of envs) {
       for (const project of config.projects) {
+        if (projectFilter && project.name !== projectFilter) continue;
         // 确定源码目录
         let repoDir;
         if (env === 'prod') {
@@ -289,7 +375,10 @@ if (require.main === module) {
         } else {
           repoDir = path.join(outputDir, '.sources', `${project.name}-${env}`);
         }
-        if (!fs.existsSync(repoDir)) continue;
+        if (!fs.existsSync(repoDir)) {
+          console.log(`  [skip] ${project.name}-${env}: worktree 不存在`);
+          continue;
+        }
 
         // 唯一信号：commitsBehind（本地 HEAD vs config 指定分支的远程 HEAD）
         // 该分支来自 scan-config.yaml 的 branches[env][project.name]
@@ -328,7 +417,7 @@ if (require.main === module) {
 
         const label = `${project.name} (${env})`;
         if (commitsBehind > 0) {
-          staleProjects.push({ label, commitsBehind, repoDir, project, env });
+          staleProjects.push({ label, commitsBehind, repoDir, project, env, targetBranch });
           console.log(`  ⚠ ${label}: ${commitsBehind} commits behind`);
         } else {
           freshProjects.push(label);
@@ -351,17 +440,22 @@ if (require.main === module) {
         console.log(`\n=== 开始自动更新 ===\n`);
         const scriptDir = __dirname;
         let graphNeedsRestart = false;
+        let hasFailures = false;
 
         for (const p of staleProjects) {
           console.log(`--- 更新 ${p.label} ---`);
 
-          // 1. git pull
+          // 1. git pull（必须拉检测到的 targetBranch，否则 HEAD 不前进→死循环）
           try {
             console.log('  1. git pull...');
-            execSync('git pull', { cwd: p.repoDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 });
+            const pullCmd = p.targetBranch
+              ? `git pull origin ${p.targetBranch}`
+              : 'git pull';
+            execSync(pullCmd, { cwd: p.repoDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 });
             console.log('     ✓');
           } catch (e) {
             console.log(`     ✗ pull 失败: ${e.message.split('\n')[0]}`);
+            hasFailures = true;
             continue; // 跳过这个项目
           }
 
@@ -370,13 +464,15 @@ if (require.main === module) {
             console.log(`  2. scan-all.js --project=${p.project.name} --branch=${p.env}...`);
             const scanResult = execSync(
               `node ${path.join(scriptDir, 'scan-all.js')} ${firstArg} --project=${p.project.name} --branch=${p.env}`,
-              { cwd: scriptDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 300000 }
+              { cwd: scriptDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 300000, maxBuffer: 64 * 1024 * 1024 }
             ).toString();
             const newDocsMatch = scanResult.match(/(\d+) 份文档/);
-            const newDocs = newDocsMatch ? newDocsMatch[1] : '0';
+            const newDocs = newDocsMatch ? newDocsMatch[1] : '?';
             console.log(`     ✓ (${newDocs} 份新文档)`);
           } catch (e) {
             console.log(`     ✗ scan 失败: ${e.message.split('\n')[0]}`);
+            hasFailures = true;
+            continue;
           }
 
           // 2.5 层次 2 增量检测
@@ -417,8 +513,8 @@ if (require.main === module) {
                     const sourceFile = path.resolve(path.dirname(candidate.file), doc.frontmatter.sources[0]);
                     if (!fs.existsSync(sourceFile)) continue;
 
-                    // 提取方法名（从文件名推断）
-                    const methodName = candidate.name.replace('.md', '').replace(/-/g, '');
+                    // 提取方法名（从文件名推断，kebab-to-camelCase）
+                    const methodName = candidate.name.replace('.md', '').replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 
                     // 写 prompt 到 pending 目录（由用户或自动化工具执行 LLM 调用）
                     const promptDir = path.join(outputDir, '.scratch', 'prompts', 'pending');
@@ -450,12 +546,13 @@ if (require.main === module) {
               console.log('  3. 向量库增量更新...');
               execSync(
                 `node ${path.join(scriptDir, 'kb-vector-index.js')} ${kbDir}`,
-                { cwd: scriptDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 300000 }
+                { cwd: scriptDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 300000, maxBuffer: 64 * 1024 * 1024 }
               );
               console.log('     ✓');
             }
           } catch (e) {
             console.log(`     ✗ 向量库失败: ${e.message.split('\n')[0]}`);
+            hasFailures = true;
           }
 
           // 4. gitnexus analyze（增量）
@@ -475,12 +572,13 @@ if (require.main === module) {
               ? `${p.project.name}-${p.env}`
               : p.project.name;
             execSync(
-              `gitnexus analyze "${p.repoDir}" --index-only --name "${registryName}"`,
+              `gitnexus analyze "${p.repoDir}" --index-only --allow-duplicate-name --name "${registryName}"`,
               { stdio: ['pipe', 'pipe', 'pipe'], timeout: 600000 } // 大仓增量重建可能超 5 分钟，与 graph-index.js 对齐 10 分钟
             );
             console.log(`     ✓ (${registryName})`);
           } catch (e) {
             console.log(`     ✗ 图谱失败: ${e.message.split('\n')[0]}`);
+            hasFailures = true;
           }
         }
 
@@ -493,6 +591,10 @@ if (require.main === module) {
         }
 
         console.log(`\n=== 更新完成 ===`);
+        if (hasFailures) {
+          console.log('  ⚠ 部分步骤失败，详见上方 ✗ 标记');
+          process.exit(1);
+        }
       } else {
         console.log(`\n  更新命令：`);
         console.log(`    node scripts/incremental.js ${firstArg} --branch=${envs[0]} --update`);

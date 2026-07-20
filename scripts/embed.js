@@ -16,9 +16,11 @@ async function detectProvider() {
   if (process.env.EMBEDDING_MODEL) {
     const model = process.env.EMBEDDING_MODEL;
     const baseUrl = process.env.EMBEDDING_BASE_URL || 'http://127.0.0.1:11434';
-    const dims = parseInt(process.env.EMBEDDING_DIMENSIONS || '512');
-    if (baseUrl.includes('11434')) {
-      return { provider: 'ollama', model, dimensions: dims };
+    // Resolve dimensions from model config table, fallback to env or 512
+    const known = PREFERRED_MODELS.find(p => model.includes(p.name));
+    const dims = parseInt(process.env.EMBEDDING_DIMENSIONS || (known ? String(known.dimensions) : '512'));
+    if (baseUrl.includes('11434') && !process.env.EMBEDDING_BASE_URL) {
+      return { provider: 'ollama', model, dimensions: dims, baseUrl };
     } else {
       return { provider: 'openai-compatible', model, dimensions: dims, baseUrl };
     }
@@ -49,12 +51,16 @@ async function detectProvider() {
         try {
           await pullModel('bge-m3');
           console.error('模型拉取成功。');
-          return { provider: 'ollama', model: 'bge-small-zh-v1.5', dimensions: 512 };
+          return { provider: 'ollama', model: 'bge-m3', dimensions: 1024 };
         } catch (pullErr) {
-          console.error('bge-small-zh-v1.5 拉取失败，尝试 nomic-embed-text ...');
-          await pullModel('nomic-embed-text');
-          console.error('模型拉取成功。');
-          return { provider: 'ollama', model: 'nomic-embed-text', dimensions: 768 };
+          console.error('bge-m3 拉取失败，尝试 nomic-embed-text ...');
+          try {
+            await pullModel('nomic-embed-text');
+            console.error('模型拉取成功。');
+            return { provider: 'ollama', model: 'nomic-embed-text', dimensions: 768 };
+          } catch (pullErr2) {
+            return null;
+          }
         }
       }
     }
@@ -79,11 +85,30 @@ async function pullModel(model) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       timeout: 300000
     }, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => reject(new Error(`pullModel HTTP ${res.statusCode}: ${body.slice(0, 200)}`)));
+        return;
+      }
       let body = '';
       res.on('data', chunk => body += chunk);
-      res.on('end', () => resolve(body));
+      res.on('end', () => {
+        // Ollama streams JSON lines; check last line for error
+        const lines = body.trim().split('\n');
+        const last = lines[lines.length - 1];
+        try {
+          const parsed = JSON.parse(last);
+          if (parsed.error) {
+            reject(new Error(`pullModel error: ${parsed.error}`));
+            return;
+          }
+        } catch (e) { /* not JSON, ignore */ }
+        resolve(body);
+      });
     });
     req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('pullModel timeout')); });
     req.write(data);
     req.end();
   });
@@ -91,17 +116,18 @@ async function pullModel(model) {
 
 async function embedBatch(texts, provider) {
   if (provider.provider === 'ollama') {
-    return embedOllama(texts, provider.model);
+    return embedOllama(texts, provider.model, provider.baseUrl);
   } else if (provider.provider === 'openai-compatible') {
-    return embedOpenAI(texts, provider.model, provider.baseUrl);
+    return embedOpenAI(texts, provider.model, provider.baseUrl, provider.dimensions);
   } else {
-    return embedOpenAI(texts, provider.model, provider.baseUrl || 'https://api.openai.com');
+    return embedOpenAI(texts, provider.model, provider.baseUrl || 'https://api.openai.com', provider.dimensions);
   }
 }
 
-async function embedOllama(texts, model) {
-  const CONCURRENCY = 5; // 并发数
+async function embedOllama(texts, model, baseUrl) {
+  const CONCURRENCY = 5;
   const results = new Array(texts.length);
+  const parsed = new URL(baseUrl || 'http://127.0.0.1:11434');
 
   for (let i = 0; i < texts.length; i += CONCURRENCY) {
     const batch = texts.slice(i, i + CONCURRENCY);
@@ -109,7 +135,7 @@ async function embedOllama(texts, model) {
       const data = JSON.stringify({ model, prompt: text });
       return new Promise((resolve, reject) => {
         const req = http.request({
-          hostname: '127.0.0.1', port: 11434, path: '/api/embeddings',
+          hostname: parsed.hostname, port: parsed.port || 11434, path: '/api/embeddings',
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           timeout: 30000
         }, (res) => {
@@ -117,12 +143,17 @@ async function embedOllama(texts, model) {
           res.on('data', chunk => body += chunk);
           res.on('end', () => {
             try {
-              const parsed = JSON.parse(body);
-              resolve({ index: i + idx, embedding: parsed.embedding });
+              const result = JSON.parse(body);
+              if (!Array.isArray(result.embedding)) {
+                reject(new Error(`Ollama returned no embedding: ${body.slice(0, 200)}`));
+                return;
+              }
+              resolve({ index: i + idx, embedding: result.embedding });
             } catch (e) { reject(e); }
           });
         });
         req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('embedOllama timeout')); });
         req.write(data);
         req.end();
       });
@@ -136,15 +167,22 @@ async function embedOllama(texts, model) {
   return results;
 }
 
-async function embedOpenAI(texts, model, baseUrl) {
+async function embedOpenAI(texts, model, baseUrl, dimensions) {
   const parsed = new URL(baseUrl || 'https://api.openai.com');
   const client = parsed.protocol === 'https:' ? https : http;
-  const data = JSON.stringify({ input: texts, model });
+  const data = JSON.stringify({ input: texts, model, ...(dimensions && { dimensions }) });
+  // Normalize path: avoid double /v1 when baseUrl already contains it
+  let basePath = parsed.pathname.replace(/\/+$/, '');
+  if (basePath.endsWith('/v1')) {
+    basePath += '/embeddings';
+  } else {
+    basePath += '/v1/embeddings';
+  }
   const res = await new Promise((resolve, reject) => {
     const req = client.request({
       hostname: parsed.hostname,
       port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-      path: `${parsed.pathname === '/' ? '' : parsed.pathname}/v1/embeddings`,
+      path: basePath,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -154,9 +192,19 @@ async function embedOpenAI(texts, model, baseUrl) {
     }, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
-      res.on('end', () => resolve(JSON.parse(body)));
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          if (!parsed.data || !Array.isArray(parsed.data)) {
+            reject(new Error(`OpenAI embeddings error: ${body.slice(0, 200)}`));
+            return;
+          }
+          resolve(parsed);
+        } catch (e) { reject(e); }
+      });
     });
     req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('embedOpenAI timeout')); });
     req.write(data);
     req.end();
   });

@@ -263,6 +263,7 @@ async function scanReact(project, kbDir) {
   let apps = project.apps;
   if (!apps || apps.length === 0) {
     apps = autoDetectReactApps(project.source);
+    project.apps = apps;
     console.log(`  [${project.name}] 自动检测到 ${apps.length} 个前端应用`);
   }
 
@@ -464,9 +465,11 @@ function generateFieldLinkageDoc(project, kbDir, commit) {
   if (!fs.existsSync(appDir)) return;
 
   const rules = [];
+  const sourceFiles = [];
   walkTsx(appDir, (fp) => {
     const content = fs.readFileSync(fp, 'utf-8');
     const component = path.basename(path.dirname(fp));
+    let matched = false;
 
     // 提取 hiddenFields
     const hiddenMatch = content.match(/hiddenFields\s*=\s*useMemo\(\(\)\s*=>\s*\{([\s\S]*?)\n\s*\},\s*\[/);
@@ -477,6 +480,7 @@ function generateFieldLinkageDoc(project, kbDir, commit) {
         const fields = (ifBlock.match(/'([^']+)'/g) || []).map(f => f.replace(/'/g, ''));
         if (condMatch && fields.length > 0) {
           rules.push({ type: 'hidden', condition: condMatch[1].trim().slice(0, 80), fields, component });
+          matched = true;
         }
       }
     }
@@ -485,7 +489,7 @@ function generateFieldLinkageDoc(project, kbDir, commit) {
     const disabledMatches = content.match(/disabledFields\s*[:=]\s*\[([^\]]+)\]/g) || [];
     for (const dm of disabledMatches) {
       const fields = (dm.match(/'([^']+)'/g) || []).map(f => f.replace(/'/g, ''));
-      if (fields.length > 0) rules.push({ type: 'disabled', condition: 'editType', fields, component });
+      if (fields.length > 0) { rules.push({ type: 'disabled', condition: 'editType', fields, component }); matched = true; }
     }
 
     // 提取 requiredFieldMap
@@ -493,7 +497,10 @@ function generateFieldLinkageDoc(project, kbDir, commit) {
     if (reqMap) {
       const fields = [...new Set(reqMap.map(m => m.replace('requiredFieldMap.', '')))];
       rules.push({ type: 'dynamic-required', condition: '后端 requiredFieldList 控制', fields, component });
+      matched = true;
     }
+
+    if (matched) sourceFiles.push(path.relative(project.source, fp));
   });
 
   const lines = ['# 前端表单字段联动规则', '', `**规则数：** ${rules.length}`, ''];
@@ -517,7 +524,7 @@ function generateFieldLinkageDoc(project, kbDir, commit) {
 
   const body = lines.join('\n');
   const outputPath = path.join(kbDir, project.apps[0].name, 'field-linkage-rules.md');
-  writeDocument(outputPath, createFrontmatter({ kb_layer: 'domain', summary: `字段联动规则，${rules.length} 条`, sources: [], commit, body }), body);
+  writeDocument(outputPath, createFrontmatter({ kb_layer: 'domain', summary: `字段联动规则，${rules.length} 条`, sources: sourceFiles, commit, body }), body);
 }
 
 function generateNodeButtonMatrixDoc(project, kbDir, commit) {
@@ -606,9 +613,11 @@ async function scanGateway(project, kbDir) {
     if (!fs.existsSync(apiDir)) continue;
 
     const apis = [];
+    const apiSourceFiles = [];
     walkJava(apiDir, (fp) => {
       const content = fs.readFileSync(fp, 'utf-8');
       const lines = content.split('\n');
+      let matched = false;
       for (let i = 0; i < lines.length; i++) {
         const annMatch = lines[i].trim().match(/^@(GET|POST|PUT|DELETE)\("([^"]+)"\)/);
         if (annMatch) {
@@ -616,11 +625,13 @@ async function scanGateway(project, kbDir) {
             const fnMatch = lines[j].match(/(\w+)\s*\(/);
             if (fnMatch && !fnMatch[1].startsWith('@')) {
               apis.push({ method: annMatch[1], path: annMatch[2], fn: fnMatch[1], file: path.basename(fp) });
+              matched = true;
               break;
             }
           }
         }
       }
+      if (matched) apiSourceFiles.push(path.relative(project.source, fp));
     });
 
     const lines = ['# 网关转发映射（supplier-portal → pur-center）', ''];
@@ -635,7 +646,7 @@ async function scanGateway(project, kbDir) {
 
     const body = lines.join('\n');
     writeDocument(path.join(kbDir, 'api-mapping.md'), createFrontmatter({
-      kb_layer: 'contracts', summary: `网关转发映射，${apis.length} 个接口`, sources: [], commit, body
+      kb_layer: 'contracts', summary: `网关转发映射，${apis.length} 个接口`, sources: apiSourceFiles, commit, body
     }), body);
     console.log(`  api-mapping: ${apis.length} 个接口`);
   }
@@ -749,8 +760,8 @@ function generateBackendMapping(config, outputDir) {
 
     if (mappings.length === 0) continue;
 
-    const rel = (config.relations || []).find(r => r.from === app.name);
-    const via = rel ? (rel.via === 'direct' ? '直连' : rel.via) : '直连';
+    const rel = (config.relations || []).find(r => r.frontend === app.name || r.app === app.name);
+    const via = rel ? (rel.gateway || '直连') : '直连';
 
     const lines = ['# 前后端接口映射', ''];
     lines.push(`**App：** ${app.name} (${app.role})`);
@@ -765,7 +776,7 @@ function generateBackendMapping(config, outputDir) {
 
     const body = lines.join('\n');
     const outPath = path.join(outputDir, reactProject.name, 'kb', app.name, 'backend-mapping.md');
-    writeDocument(outPath, createFrontmatter({ kb_layer: 'flows', summary: `前后端映射，${mappings.length} 条（${app.name} → ${backendProject.name}）`, sources: [], commit: 'auto', body }), body);
+    writeDocument(outPath, createFrontmatter({ kb_layer: 'flows', summary: `前后端映射，${mappings.length} 条（${app.name} → ${backendProject.name}）`, sources: [path.relative(outputDir, apiClientPath)], commit: 'auto', body }), body);
   }
   console.log('  backend-mapping: ✓');
 }
@@ -785,32 +796,38 @@ function generateErrorCodes(projectSource, errorEnumPath, sourceDir, outputPath,
   const errorEnumDir = path.join(projectSource, errorEnumPath);
   if (!fs.existsSync(errorEnumDir)) return;
 
+  const errorSourceFiles = [];
   const errors = [];
   for (const f of fs.readdirSync(errorEnumDir).filter(f => f.endsWith('.java'))) {
     const content = fs.readFileSync(path.join(errorEnumDir, f), 'utf-8');
     const regex = /(\w+)\s*\(\s*(\d+)\s*,\s*"([^"]+)"\s*\)/g;
     let match;
+    const prevLen = errors.length;
     while ((match = regex.exec(content)) !== null) {
       errors.push({ code: match[1], num: match[2], message: match[3] });
     }
+    if (errors.length > prevLen) errorSourceFiles.push(path.relative(projectSource, path.join(errorEnumDir, f)));
   }
 
   const throwSites = [];
   walkJava(sourceDir, (fp) => {
     const content = fs.readFileSync(fp, 'utf-8');
     const lines = content.split('\n');
+    let matched = false;
     for (let i = 0; i < lines.length; i++) {
       const assertMatch = lines[i].match(/Asserts\.check\w*\([^,]+,\s*(\w+)\.(\w+)\)/);
       if (assertMatch) {
         const condition = (lines[i].match(/Asserts\.check\w*\(\s*([^,]+),/) || [])[1] || '';
         throwSites.push({ errorCode: assertMatch[2], file: path.basename(fp, '.java'), line: i + 1, condition: condition.trim().slice(0, 80) });
+        matched = true;
       }
     }
+    if (matched) errorSourceFiles.push(path.relative(projectSource, fp));
   });
 
   const body = `# 异常码索引\n\n**异常码数：** ${errors.length}\n**抛出点数：** ${throwSites.length}\n`;
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  writeDocument(outputPath, createFrontmatter({ kb_layer: 'domain', summary: `异常码索引，${errors.length} 码，${throwSites.length} 抛出点`, sources: [], commit, body }), body);
+  writeDocument(outputPath, createFrontmatter({ kb_layer: 'domain', summary: `异常码索引，${errors.length} 码，${throwSites.length} 抛出点`, sources: errorSourceFiles, commit, body }), body);
 }
 
 function getCommit(sourceDir) {

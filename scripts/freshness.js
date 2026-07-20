@@ -20,26 +20,28 @@ function checkFreshness(repoDir, options = {}) {
   }
 
   // 超过 12h，需要检查远端
-  const result = fetchAndCompare(repoDir, state);
+  const result = fetchAndCompare(state);
 
-  // 更新 freshness check 时间
-  updateFreshnessCheck(state);
-  writeState(statePath, state);
+  // 只在真正执行了 fetch+compare 时才更新 freshness timer
+  if (!result._skipped) {
+    updateFreshnessCheck(state);
+    writeState(statePath, state);
+  }
 
   return result;
 }
 
-function fetchAndCompare(repoDir, state) {
-  // 检查是否在 feature 分支（与 main 有偏离）
-  const branchCheck = checkFeatureBranch(repoDir);
-  if (branchCheck.isFeatureBranch) {
-    return { fresh: true, reason: 'feature branch - skip auto-update', branch: branchCheck.branch };
-  }
-
+function fetchAndCompare(state) {
   // 获取扫描源目录（skill 下的副本）
   const scanSourceDir = findScanSource(state);
   if (!scanSourceDir) {
-    return { fresh: true, reason: 'no scan source configured' };
+    return { fresh: true, reason: 'no scan source configured', _skipped: true };
+  }
+
+  // 检查是否在 feature 分支 — 使用 scanSourceDir 保持与后续 fetch/compare 一致
+  const branchCheck = checkFeatureBranch(scanSourceDir);
+  if (branchCheck.isFeatureBranch) {
+    return { fresh: true, reason: 'feature branch - skip auto-update', branch: branchCheck.branch, _skipped: true };
   }
 
   // git fetch

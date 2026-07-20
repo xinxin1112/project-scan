@@ -79,6 +79,7 @@ async function indexKb(kbDir, vectorStoreDir, options = {}) {
     for (const section of sections) {
       if (section.text.trim().length < 20) continue;
       // 给代码块里的每行加上行号前缀
+      // 注意：startLine 是 body-relative（去除 frontmatter 后的行号），非源文件绝对行号，这是有意为之
       const textWithLineNumbers = addLineNumbers(section.text, section.startLine);
       chunks.push({
         text: textWithLineNumbers,
@@ -100,6 +101,7 @@ async function indexKb(kbDir, vectorStoreDir, options = {}) {
 
   // 批量 embedding
   console.log('正在生成 embedding...');
+  // embedding 模型上下文有限，只取前 2000 字符生成向量；存储保留 3000 供展示
   const texts = chunks.map(c => c.text.slice(0, 2000));
   const vectors = [];
 
@@ -132,42 +134,79 @@ async function indexKb(kbDir, vectorStoreDir, options = {}) {
 
   if (tableNames.includes('kb')) {
     if (incremental && existingMeta) {
-      // 增量：删除变化文件的旧 chunk，追加新 chunk
-      const table = await db.openTable('kb');
-      const changedRelPaths = changedFiles.map(fp => path.relative(kbDir, fp));
-      for (const relPath of changedRelPaths) {
-        try {
-          await table.delete(`file_path = '${relPath}'`);
-        } catch (e) {
-          // 文件可能是新增的，没有旧 chunk
+      // Schema mismatch detection: if table lacks fields present in new data, force full rebuild
+      let schemaMismatch = false;
+      try {
+        const table = await db.openTable('kb');
+        const schema = await table.schema;
+        const existingFields = new Set(schema.fields.map(f => f.name));
+        const newFields = Object.keys(data[0] || {});
+        for (const field of newFields) {
+          if (!existingFields.has(field)) {
+            console.log(`  schema 不兼容（新字段 "${field}"），强制全量重建`);
+            schemaMismatch = true;
+            break;
+          }
         }
+      } catch (e) {
+        schemaMismatch = true;
       }
-      // 删除已删除文件的 chunk
-      const currentRelPaths = new Set(mdFiles.map(fp => path.relative(kbDir, fp)));
-      for (const oldPath of Object.keys(existingFileHashes)) {
-        if (!currentRelPaths.has(oldPath)) {
+
+      if (schemaMismatch) {
+        await db.dropTable('kb');
+        if (data.length > 0) {
+          await db.createTable('kb', data);
+        }
+      } else {
+        // 增量：删除变化文件的旧 chunk，追加新 chunk
+        const table = await db.openTable('kb');
+        const changedRelPaths = changedFiles.map(fp => path.relative(kbDir, fp));
+        for (const relPath of changedRelPaths) {
           try {
-            await table.delete(`file_path = '${oldPath}'`);
-          } catch (e) {}
+            await table.delete(`file_path = '${relPath.replace(/'/g, "''")}'`);
+          } catch (e) {
+            // 文件可能是新增的，没有旧 chunk
+          }
         }
-      }
-      // 追加新 chunk
-      if (data.length > 0) {
-        await table.add(data);
+        // 删除已删除文件的 chunk
+        const currentRelPaths = new Set(mdFiles.map(fp => path.relative(kbDir, fp)));
+        for (const oldPath of Object.keys(existingFileHashes)) {
+          if (!currentRelPaths.has(oldPath)) {
+            try {
+              await table.delete(`file_path = '${oldPath.replace(/'/g, "''")}'`);
+            } catch (e) {}
+          }
+        }
+        // 追加新 chunk
+        if (data.length > 0) {
+          await table.add(data);
+        }
       }
     } else {
       // 全量：删表重建
       await db.dropTable('kb');
-      await db.createTable('kb', data);
+      if (data.length > 0) {
+        await db.createTable('kb', data);
+      }
     }
   } else {
-    await db.createTable('kb', data);
+    if (data.length > 0) {
+      await db.createTable('kb', data);
+    }
   }
 
   // 写 meta
-  const totalChunks = incremental && existingMeta
-    ? (existingMeta.chunk_count - chunks.length + data.length) // 估算
-    : chunks.length;
+  let totalChunks;
+  if (incremental && existingMeta) {
+    try {
+      const table = await db.openTable('kb');
+      totalChunks = await table.countRows();
+    } catch (e) {
+      totalChunks = data.length;
+    }
+  } else {
+    totalChunks = data.length;
+  }
 
   fs.writeFileSync(metaPath, JSON.stringify({
     embedding_model: `${provider.provider}/${provider.model}`,
@@ -221,6 +260,7 @@ function splitByHeadings(body) {
   return sections;
 }
 
+// startLine 是 body-relative 行号（frontmatter 剥离后），非源文件绝对行号
 function addLineNumbers(text, startLine) {
   const lines = text.split('\n');
   let inCodeBlock = false;

@@ -96,28 +96,54 @@ function routesToControllerFormat(filePath, routes) {
 
 function extractFromGraph(sourcePath, options = {}) {
   const { repo } = options;
+  const BATCH_SIZE = 50;
+
   const countResult = runCypher(sourcePath, 'MATCH (r:Route) RETURN count(r) as count', repo);
   if (!countResult || countResult.row_count === 0) return null;
 
   const countRow = countResult.markdown?.match(/\| (\d+) \|/);
   if (!countRow || parseInt(countRow[1]) === 0) return null;
 
-  const routesResult = runCypher(sourcePath, 'MATCH (r:Route) RETURN r', repo);
-  if (!routesResult || !routesResult.markdown) return null;
+  const totalRoutes = parseInt(countRow[1]);
+  const allRoutes = [];
 
-  const rawRows = routesResult.markdown
-    .split('\n')
-    .slice(2)
-    .map(line => line.replace(/^\| /, '').replace(/ \|$/, '').trim())
-    .filter(Boolean);
+  for (let skip = 0; skip < totalRoutes; skip += BATCH_SIZE) {
+    const query = `MATCH (r:Route) RETURN r.name, r.method, r.filePath, r.handlerSymbolId SKIP ${skip} LIMIT ${BATCH_SIZE}`;
+    const batchResult = runCypher(sourcePath, query, repo);
+    if (!batchResult || !batchResult.markdown) {
+      if (skip === 0) return null;
+      break;
+    }
 
-  const routes = parseRouteNodes(rawRows.map(row => {
-    try { return JSON.parse(row); } catch { return null; }
-  }).filter(Boolean));
+    const rawRows = batchResult.markdown
+      .split('\n')
+      .slice(2)
+      .map(line => line.replace(/^\| /, '').replace(/ \|$/, '').trim())
+      .filter(Boolean);
 
-  if (routes.length === 0) return null;
+    // Detect possible 64KB truncation
+    const rawOutput = batchResult.markdown;
+    if (rawOutput.length >= 65000 && rawRows.length < BATCH_SIZE) {
+      console.error(`[WARN] gitnexus output may be truncated at ${rawOutput.length} bytes (SKIP ${skip}), reducing batch`);
+    }
 
-  const grouped = groupRoutesByController(routes);
+    for (const row of rawRows) {
+      const cols = row.split(' | ').map(c => c.trim());
+      if (cols.length >= 4) {
+        allRoutes.push({
+          name: cols[0],
+          method: cols[1] || 'GET',
+          filePath: cols[2],
+          handlerSymbolId: cols[3] || '',
+          id: `Route:${cols[1]} ${cols[0]}`
+        });
+      }
+    }
+  }
+
+  if (allRoutes.length === 0) return null;
+
+  const grouped = groupRoutesByController(allRoutes);
   const controllers = [];
 
   for (const [filePath, fileRoutes] of grouped) {

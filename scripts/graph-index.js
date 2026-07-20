@@ -27,7 +27,7 @@ function indexProject(projectName, sourcePath, registryName) {
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 
     // 解析输出中的统计信息
-    const statsMatch = result.match(/(\d[\d,]+)\s*nodes.*?(\d[\d,]+)\s*edges.*?(\d[\d,]+)\s*clusters.*?(\d[\d,]+)\s*flows/);
+    const statsMatch = result.match(/(\d[\d,]+)\s*nodes[\s\S]*?(\d[\d,]+)\s*edges[\s\S]*?(\d[\d,]+)\s*clusters[\s\S]*?(\d[\d,]+)\s*flows/);
     if (statsMatch) {
       console.log(`  [${projectName}] ✓ (${elapsed}s) — ${statsMatch[1]} nodes, ${statsMatch[2]} edges, ${statsMatch[3]} clusters, ${statsMatch[4]} flows`);
     } else {
@@ -100,8 +100,14 @@ async function main() {
   // 在每个项目的源码目录生成 .mcp.json（如果不存在）
   if (success > 0) {
     for (const project of projects) {
-      const sourcePath = project.source || path.join(outputDir, '.sources', project.name);
-      const mcpPath = path.join(sourcePath, '.mcp.json');
+      let mcpSourcePath;
+      if (branchKey && branchKey !== 'prod') {
+        mcpSourcePath = path.join(outputDir, '.sources', `${project.name}-${branchKey}`);
+      } else {
+        mcpSourcePath = project.source || path.join(outputDir, '.sources', project.name);
+      }
+      if (!fs.existsSync(mcpSourcePath)) continue;
+      const mcpPath = path.join(mcpSourcePath, '.mcp.json');
       if (!fs.existsSync(mcpPath)) {
         const mcpConfig = {
           mcpServers: {
