@@ -76,6 +76,20 @@ function capMethods(list, n = DEFAULT_METHOD_CAP) {
 }
 
 /**
+ * 构建 gitnexus CLI 命令（纯函数，可测）
+ * 多仓注册环境下必须带 -r <绝对路径>（1.6.9 要求）
+ */
+function buildCommand(symbol, options = {}) {
+  const { mode = 'context', targetSymbol, sourcePath } = options;
+  const repoArg = sourcePath ? `-r "${sourcePath}"` : '';
+
+  if (mode === 'trace' && targetSymbol) {
+    return `gitnexus trace "${symbol}" "${targetSymbol}" ${repoArg}`.trim();
+  }
+  return `gitnexus context "${symbol}" ${repoArg}`.trim();
+}
+
+/**
  * 调 gitnexus context CLI（wrapper，不测）
  */
 function expand(symbol, options = {}) {
@@ -86,12 +100,7 @@ function expand(symbol, options = {}) {
   }
 
   try {
-    let cmd;
-    if (mode === 'trace' && targetSymbol) {
-      cmd = `gitnexus trace "${symbol}" "${targetSymbol}"`;
-    } else {
-      cmd = `gitnexus context "${symbol}"`;
-    }
+    const cmd = buildCommand(symbol, { mode, targetSymbol, sourcePath });
 
     const stdout = execSync(cmd, {
       cwd: sourcePath,
@@ -106,8 +115,12 @@ function expand(symbol, options = {}) {
     return result;
   } catch (e) {
     // 降级：gitnexus 不可用时返回空结构，不崩
+    // DEBUG 模式下输出错误到 stderr，便于排查配置问题
+    if (process.env.DEBUG || process.env.DEBUG_HYBRID) {
+      console.error(`[graph-expander] expand("${symbol}") failed: ${e.message}`);
+    }
     return { symbol: null, kind: null, outgoing: [], incoming: [] };
   }
 }
 
-module.exports = { parseContextResult, capMethods, expand };
+module.exports = { parseContextResult, capMethods, buildCommand, expand };

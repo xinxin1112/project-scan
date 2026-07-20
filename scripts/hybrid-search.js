@@ -59,7 +59,17 @@ async function hybridSearch(query, options = {}) {
   }
 
   // 2. 向量召回
-  const hits = await search(vectorStore, query, { topK });
+  const rawHits = await search(vectorStore, query, { topK });
+
+  // 过滤 vector-search 透传的恒 null 死字段（class_name/method_name/module/line_start/line_end）
+  const hits = rawHits.map(hit => {
+    const clean = { score: hit.score, file_path: hit.file_path };
+    if (hit.heading) clean.heading = hit.heading;
+    if (hit.snippet) clean.snippet = hit.snippet;
+    if (hit.source_type) clean.source_type = hit.source_type;
+    if (hit.collection) clean.collection = hit.collection;
+    return clean;
+  });
 
   if (!graph || hits.length === 0) {
     return merge(hits, []);

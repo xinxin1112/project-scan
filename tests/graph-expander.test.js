@@ -1,7 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { parseContextResult, capMethods } = require('../scripts/graph-expander');
+const { parseContextResult, capMethods, buildCommand } = require('../scripts/graph-expander');
 
 describe('GraphExpander pure functions', () => {
   describe('parseContextResult', () => {
@@ -102,6 +102,40 @@ describe('GraphExpander pure functions', () => {
 
     it('handles empty list', () => {
       assert.deepEqual(capMethods([], 8), []);
+    });
+  });
+
+  describe('buildCommand', () => {
+    it('builds context command with -r when sourcePath provided', () => {
+      const cmd = buildCommand('ReconcileController', { sourcePath: '/home/user/project' });
+      assert.equal(cmd, 'gitnexus context "ReconcileController" -r "/home/user/project"');
+    });
+
+    it('builds context command without -r when no sourcePath', () => {
+      const cmd = buildCommand('ReconcileController', {});
+      assert.equal(cmd, 'gitnexus context "ReconcileController"');
+    });
+
+    it('builds trace command with -r when sourcePath provided', () => {
+      const cmd = buildCommand('OrderController', {
+        mode: 'trace',
+        targetSymbol: 'PaymentService',
+        sourcePath: '/home/user/project'
+      });
+      assert.equal(cmd, 'gitnexus trace "OrderController" "PaymentService" -r "/home/user/project"');
+    });
+
+    it('builds trace command without -r when no sourcePath', () => {
+      const cmd = buildCommand('OrderController', {
+        mode: 'trace',
+        targetSymbol: 'PaymentService'
+      });
+      assert.equal(cmd, 'gitnexus trace "OrderController" "PaymentService"');
+    });
+
+    it('falls back to context mode when trace has no targetSymbol', () => {
+      const cmd = buildCommand('Foo', { mode: 'trace', sourcePath: '/p' });
+      assert.equal(cmd, 'gitnexus context "Foo" -r "/p"');
     });
   });
 });
