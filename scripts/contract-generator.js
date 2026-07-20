@@ -152,16 +152,63 @@ function generateContractDoc(controllerFilePath, outputDir, commit) {
   return { outputPath, controller };
 }
 
-module.exports = { parseControllerFile, generateContractMarkdown, generateContractDoc };
+module.exports = { parseControllerFile, generateContractMarkdown, generateContractDoc, camelToKebab };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
-  if (args.length < 2) {
-    console.log('用法: contract-generator.js <controller.java | dir> <output-dir> [commit]');
+  const sourceArg = args.find(a => a.startsWith('--source='));
+  const source = sourceArg ? sourceArg.split('=')[1] : 'auto';
+  const positional = args.filter(a => !a.startsWith('--'));
+
+  if (positional.length < 2) {
+    console.log('用法: contract-generator.js <controller.java | dir> <output-dir> [commit] [--source=graph|regex|auto]');
     process.exit(1);
   }
-  const [input, outputDir, commit = 'unknown'] = args;
+  const [input, outputDir, commit = 'unknown'] = positional;
 
+  if (source === 'graph' || source === 'auto') {
+    const { extractFromGraph } = require('./contract-extractor');
+    const { mergeAll } = require('./contract-merger');
+    const graphControllers = extractFromGraph(input);
+
+    if (graphControllers && graphControllers.length > 0) {
+      let regexControllers = [];
+      if (source === 'auto') {
+        const stat = fs.statSync(input);
+        const files = stat.isDirectory()
+          ? fs.readdirSync(input, { recursive: true }).filter(f => f.endsWith('.java')).map(f => path.join(input, f))
+          : [input];
+        regexControllers = files.map(f => parseControllerFile(f)).filter(c => c.className && c.endpoints.length > 0);
+      }
+
+      const merged = mergeAll(graphControllers, regexControllers);
+      let count = 0;
+      for (const controller of merged) {
+        const body = generateContractMarkdown(controller);
+        const docName = camelToKebab(controller.className) + '.md';
+        const outputPath = path.join(outputDir, docName);
+        const relativeSrc = controller.sourcePath || '';
+        const frontmatter = createFrontmatter({
+          kb_layer: 'contracts',
+          summary: `${controller.comment || controller.className}，${controller.endpoints.length} 个端点，基础路径 ${controller.basePath}`,
+          sources: [relativeSrc],
+          commit,
+          body
+        });
+        writeDocument(outputPath, frontmatter, body);
+        console.log(`✓ ${controller.className} — ${controller.endpoints.length} 端点 [graph]`);
+        count++;
+      }
+      console.log(`\n共生成 ${count} 份 contract 文档（source: graph${source === 'auto' ? '+regex merged' : ''}）`);
+      process.exit(0);
+    } else if (source === 'graph') {
+      console.error('图谱中无 Route 数据，无法使用 --source=graph');
+      process.exit(1);
+    }
+    // auto fallthrough to regex
+  }
+
+  // regex mode (default fallback)
   const stat = fs.statSync(input);
   const files = stat.isDirectory()
     ? fs.readdirSync(input, { recursive: true })
@@ -177,5 +224,5 @@ if (require.main === module) {
       count++;
     }
   }
-  console.log(`\n共生成 ${count} 份 contract 文档`);
+  console.log(`\n共生成 ${count} 份 contract 文档（source: regex）`);
 }

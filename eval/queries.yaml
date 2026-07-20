@@ -1,0 +1,169 @@
+# Golden set for hybrid-search eval
+# Source: real queries verified against pur-center/prod (2026-07-20)
+# Format: each entry tested with `node hybrid-search.js "<query>" --project=pur-center --branch=prod`
+#
+# expected_graph_symbols[].symbol = expansions[].symbol (method/interface names)
+# expected_graph_symbols[].from_file = graph_context[].from_file (KB doc that triggered expansion)
+
+- query: "确认对账单"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/contracts/internal/reconcile-usage-operate.md"
+  expected_graph_symbols:
+    - symbol: "afterSettlePreCheck"
+      from_file: "pur-reconcile/contracts/internal/reconcile-usage-check.md"
+    - symbol: "save"
+      from_file: "pur-reconcile/contracts/internal/reconcile-supply.md"
+  verify_provenance: true
+
+- query: "提交对账单"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/contracts/internal/reconcile-usage-operate.md"
+    - "pur-reconcile/contracts/internal/reconcile-supply.md"
+  expected_graph_symbols:
+    - symbol: "submit"
+      from_file: "pur-reconcile/contracts/internal/reconcile-supply.md"
+  verify_provenance: true
+
+- query: "对账单审批"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/contracts/internal/reconcile-usage-operate.md"
+  expected_graph_symbols:
+    - symbol: "getUnderReconcileList"
+      from_file: "pur-reconcile/contracts/internal/reconcile-supply.md"
+  verify_provenance: false
+
+- query: "采购订单提交"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-order/contracts/internal/pur-order.md"
+  expected_graph_symbols:
+    - symbol: "submitOrder"
+      from_file: "pur-order/contracts/internal/pur-order-supplier-ops.md"
+  verify_provenance: false
+
+- query: "供应商准入"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-supplier/contracts/internal/pur-supplier-flow.md"
+  expected_graph_symbols:
+    - symbol: "submitRule"
+      from_file: "pur-supplier/contracts/internal/pur-supplier-qualification-rule.md"
+  verify_provenance: false
+
+- query: "寻源立项"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-sourcing/contracts/internal/pur-sourcing-exe.md"
+  expected_graph_symbols:
+    - symbol: "saveDraftExe"
+      from_file: "pur-sourcing/contracts/internal/pur-sourcing-exe.md"
+  verify_provenance: false
+
+- query: "发票校验"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/contracts/internal/reconcile-common.md"
+  expected_graph_symbols: []
+  verify_provenance: false
+
+- query: "合同关联"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-order/contracts/internal/pur-order-open.md"
+  expected_graph_symbols:
+    - symbol: "getUserInfo"
+      from_file: "pur-strategy/contracts/internal/strategy.md"
+  verify_provenance: false
+
+- query: "用量同步"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/domain/entities/pur_reconcile_usage_sync.md"
+  expected_graph_symbols: []
+  verify_provenance: false
+
+- query: "对账单用量操作"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/contracts/internal/reconcile-usage-operate.md"
+  expected_graph_symbols: []
+  verify_provenance: false
+
+- query: "对账单退回"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/contracts/internal/reconcile-usage-operate.md"
+  expected_graph_symbols: []
+  verify_provenance: false
+
+- query: "供应商招募"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-supplier/contracts/internal/pur-supplier-recruit.md"
+  expected_graph_symbols:
+    - symbol: "startFlow"
+      from_file: "pur-supplier/contracts/internal/pur-supplier-recruit-flow.md"
+  verify_provenance: false
+
+- query: "采购需求审批"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-requisition/contracts/internal/pur-requisition.md"
+  expected_graph_symbols: []
+  verify_provenance: false
+
+- query: "订单验收"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-order/contracts/internal/pur-order-acceptance.md"
+  expected_graph_symbols:
+    - symbol: "queryAwaitAcceptancePage"
+      from_file: "pur-order/contracts/internal/pur-order-supplier-acceptance.md"
+  verify_provenance: false
+
+- query: "对账单查询"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/contracts/internal/reconcile-usage-query.md"
+  expected_graph_symbols: []
+  verify_provenance: false
+
+- query: "对账单删除"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/contracts/internal/reconcile-usage-operate.md"
+  expected_graph_symbols: []
+  verify_provenance: false
+
+- query: "供应商邀请"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-supplier/contracts/internal/pur-supplier-invitation.md"
+  expected_graph_symbols: []
+  verify_provenance: false
+
+- query: "对账规则配置"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/domain/entities/pur_reconcile_rule.md"
+  expected_graph_symbols: []
+  verify_provenance: false
+
+- query: "寻源执行保存"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-sourcing/contracts/internal/pur-sourcing-exe.md"
+  expected_graph_symbols:
+    - symbol: "saveDraftExe"
+      from_file: "pur-sourcing/contracts/internal/pur-sourcing-exe.md"
+  verify_provenance: false
+
+- query: "对账单批量导入"
+  last_verified_commit: "fc2c267"
+  expected_hits:
+    - "pur-reconcile/contracts/internal/reconcile-usage-operate.md"
+  expected_graph_symbols: []
+  verify_provenance: false
