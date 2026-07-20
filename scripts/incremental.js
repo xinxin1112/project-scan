@@ -291,18 +291,25 @@ if (require.main === module) {
         }
         if (!fs.existsSync(repoDir)) continue;
 
-        // 唯一信号：commitsBehind（基于 .gitnexus/meta.json 记录的 commit vs 远程 HEAD）
+        // 唯一信号：commitsBehind（本地 HEAD vs config 指定分支的远程 HEAD）
+        // 该分支来自 scan-config.yaml 的 branches[env][project.name]
+        const targetBranch = (config.branches && config.branches[env] && config.branches[env][project.name]) || null;
         let commitsBehind = 0;
         try {
-          // 先 fetch 看有没有新 commit（dry-run 不实际拉取）
-          execSync('git fetch --dry-run 2>&1', { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 });
+          // 真实 fetch 指定分支（不能用 --dry-run，dry-run 不更新 FETCH_HEAD 会导致误判"最新"）
+          if (targetBranch) {
+            execSync(`git fetch origin ${targetBranch}`, { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 60000 });
+          } else {
+            execSync('git fetch', { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 60000 });
+          }
 
-          // 比对本地 HEAD vs 远程
+          // 比对本地 HEAD vs 刚 fetch 到的远程分支（FETCH_HEAD 现在是最新的）
           const localHead = execSync('git rev-parse HEAD', { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
-          const remoteHead = execSync('git rev-parse FETCH_HEAD', { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+          const remoteRef = targetBranch ? `origin/${targetBranch}` : 'FETCH_HEAD';
+          const remoteHead = execSync(`git rev-parse ${remoteRef}`, { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
 
           if (localHead !== remoteHead) {
-            commitsBehind = parseInt(execSync(`git rev-list --count ${localHead}..FETCH_HEAD`, { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim()) || 0;
+            commitsBehind = parseInt(execSync(`git rev-list --count ${localHead}..${remoteRef}`, { cwd: repoDir, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim()) || 0;
           }
         } catch (e) {
           // fetch 失败（网络/shallow clone），回退到本地 .gitnexus 检测
@@ -462,11 +469,16 @@ if (require.main === module) {
               // 等进程释放锁
               execSync('sleep 1');
             }
+            // 注册名必须与 graph-index.js 一致：test 等非 prod 分支加环境后缀，
+            // 否则 worktree 会和 prod 撞名（GitNexus 按 --name 注册，缺省则按路径，两处不一致会互相覆盖）
+            const registryName = p.env && p.env !== 'prod'
+              ? `${p.project.name}-${p.env}`
+              : p.project.name;
             execSync(
-              `gitnexus analyze ${p.repoDir} --index-only`,
-              { stdio: ['pipe', 'pipe', 'pipe'], timeout: 300000 }
+              `gitnexus analyze "${p.repoDir}" --index-only --name "${registryName}"`,
+              { stdio: ['pipe', 'pipe', 'pipe'], timeout: 600000 } // 大仓增量重建可能超 5 分钟，与 graph-index.js 对齐 10 分钟
             );
-            console.log('     ✓');
+            console.log(`     ✓ (${registryName})`);
           } catch (e) {
             console.log(`     ✗ 图谱失败: ${e.message.split('\n')[0]}`);
           }
